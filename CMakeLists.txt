@@ -4,9 +4,9 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message("CMAKE_VERSION: ${CMAKE_VERSION}")
 
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b") # hash for cmake 4.3.2, if you have different then set an adequate value
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b") # hash for cmake 4.3, if you have different then set an adequate value
 
-project(OrderBook)
+project(OrderBook CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

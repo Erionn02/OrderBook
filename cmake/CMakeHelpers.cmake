@@ -56,7 +56,7 @@ function(set_link_options TARGET_NAME)
             -Wnull-dereference
             -Wuseless-cast
             -Wdouble-promotion
-            -fmodules
+            -freflection
     )
 endfunction()
 

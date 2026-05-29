@@ -1,6 +1,7 @@
 #include <meta>
 #include <iostream>
 
+#include <simd>
 
 struct User {
     std::string name;
@@ -20,11 +21,11 @@ void print_struct_fields(const T& obj) {
 
     // Wrap the vector returning function in std::define_static_array
     template for (constexpr auto member : getMembers<T>()) {
-
         std::cout << "  - " << std::meta::identifier_of(member)
                   << ":+ " << obj.[:member:] << '\n';
-        }
+    }
 }
+
 
 int main() {
     User my_user{"Alice", 28, true};

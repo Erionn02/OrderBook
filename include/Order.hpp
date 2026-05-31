@@ -1,38 +1,62 @@
 #pragma once
-#include <cstdint>
+#include <stdexcept>
 
-enum class OrderType : std::uint8_t {
-    Market,
-    Limit,
-    FillOrKill,
-    ImmediateOrCancel,
-    Iceberg,
-};
+#include "BaseTypes.hpp"
 
-enum class TradeSide : std::uint8_t {
-    Buy,
-    Sell
-};
-
-using Price = std::int64_t;
-using Quantity = std::uint64_t;
-using OrderId = std::uint64_t;
 
 struct Order {
+    Order(OrderId id, OrderType type, Quantity quantity, Price price, TradeSide side) : id(id), type(type),
+        initialQuantity(quantity), quantity(quantity), price(price), side(side) {}
+
+    Quantity fill(Order& other) {
+        Quantity filled{std::min(other.quantity, quantity)};
+        quantity -= filled;
+        other.quantity -= filled;
+        return filled;
+    }
+
+    [[nodiscard]] Quantity getFilled() const {
+        return initialQuantity - quantity;
+    }
+
+    [[nodiscard]] bool isFilled() const {
+        return quantity == 0;
+    }
+
+    [[nodiscard]] OrderId getId() const {
+        return id;
+    }
+
+    [[nodiscard]] OrderType getType() const {
+        return type;
+    }
+
+    [[nodiscard]] Quantity getInitialQuantity() const {
+        return initialQuantity;
+    }
+
+    [[nodiscard]] Quantity getQuantity() const {
+        return quantity;
+    }
+
+    [[nodiscard]] Price getPrice() const {
+        return price;
+    }
+
+    [[nodiscard]] TradeSide getSide() const {
+        return side;
+    }
+
+    bool operator==(const Order& other) const = default;
+
+    void setPrice(Price newPrice) { // for testing purposes
+        price = newPrice;
+    }
+private:
     OrderId id;
     OrderType type;
     Quantity initialQuantity;
+    Quantity quantity;
     Price price;
     TradeSide side;
 };
-
-struct Trade {
-    OrderId orderIdA;
-    OrderId orderIdB;
-    OrderId aggressorId;
-    TradeSide aggressorSide;
-    Price price;
-    Quantity quantity;
-    bool operator==(const Trade&) const;
-};
-

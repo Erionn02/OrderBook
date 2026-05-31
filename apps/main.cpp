@@ -32,5 +32,6 @@ int main() {
 
     print_struct_fields(my_user);
 
+
     return 0;
 }

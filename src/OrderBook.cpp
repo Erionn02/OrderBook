@@ -2,6 +2,9 @@
 
 
 std::vector<Trade> OrderBook::addOrder(Order order) {
+    if (orders.contains(order.getId())) {
+        return {};
+    }
     if (order.getSide() == TradeSide::Buy) {
         return addBuyOrder(order);
     }

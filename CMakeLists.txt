@@ -15,6 +15,8 @@ set(CMAKE_CXX_MODULE_STD ON)
 
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeHelpers.cmake)
 add_conan_lib(GTest)
+add_conan_lib(benchmark)
+
 
 
 # Turn on with 'cmake -Dcoverage=ON ..'.
@@ -48,3 +50,7 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
 else ()
     message("RELEASE mode - testing disabled")
 endif ()
+
+add_app(OrderBookBenchmark
+        tests/OrderBookBenchmark.cpp
+)

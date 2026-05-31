@@ -198,7 +198,7 @@ TEST_F(OrderBookTests, modifyOrderGoesToTheEndOfPriceLevelQueueFifo) {
     EXPECT_EQ(trades[1].quantity, 10);
     EXPECT_EQ(trades[1].orderIdB, buyOrder3.getId());
 
-    EXPECT_EQ(order_book.getOrder(buyOrder1.getId()).getFilled(), 0); // previous orders filled incoming order fully
+    EXPECT_EQ(order_book.getOrder(buyOrder1.getId()).getFilled(), 0); // previous orders filled the incoming order fully
     ASSERT_EQ(order_book.getOrdersCount(), 2);
 }
 

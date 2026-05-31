@@ -48,10 +48,6 @@ struct Order {
     }
 
     bool operator==(const Order& other) const = default;
-
-    void setPrice(Price newPrice) { // for testing purposes
-        price = newPrice;
-    }
 private:
     OrderId id;
     OrderType type;

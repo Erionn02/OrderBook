@@ -7,8 +7,6 @@
 #include <map>
 #include <unordered_map>
 
-struct PriceLevel;
-
 class OrderBook {
 public:
     std::vector<Trade> addOrder(Order order);

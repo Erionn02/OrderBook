@@ -57,6 +57,7 @@ function(set_link_options TARGET_NAME)
             -Wuseless-cast
             -Wdouble-promotion
             -freflection
+            -march=native
     )
 endfunction()
 

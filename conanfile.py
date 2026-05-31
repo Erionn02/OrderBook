@@ -6,7 +6,7 @@ class TemplateProjectConan(ConanFile):
     version = "1.0"
     settings = "os", "compiler", "build_type", "arch"
     generators = "CMakeDeps"
-    requires = "gtest/1.17.0"
+    requires = "gtest/1.17.0", "benchmark/1.9.5"
 
     def configure(self):
         pass

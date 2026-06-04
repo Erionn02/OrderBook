@@ -6,62 +6,9 @@ std::vector<Trade> OrderBook::addOrder(Order order) {
         return {};
     }
     if (order.getSide() == TradeSide::Buy) {
-        return addBuyOrder(order);
+        return addOrderImpl(order, std::less<Price>{}, asks, bids);
     }
-    return addSellOrder(order);
-}
-
-std::vector<Trade> OrderBook::addBuyOrder(Order order) {
-    std::vector<Trade> trades;
-    for (auto &[price, level] : asks) {
-        if (order.getPrice() < price) {
-            break;
-        }
-        auto sellOrderIt = level.orders.begin();
-        while (sellOrderIt != level.orders.end())
-        {
-            Quantity filled = sellOrderIt->fill(order);
-            trades.emplace_back(order.getId(), sellOrderIt->getId(), order.getId(), order.getSide(), sellOrderIt->getPrice(), filled);
-            if (sellOrderIt->isFilled()) {
-                orders.erase(sellOrderIt->getId());
-                sellOrderIt = level.orders.erase(sellOrderIt);
-            } else {
-                ++sellOrderIt;
-            }
-            if (order.isFilled()) {
-                return trades;
-            }
-        }
-    }
-    auto & levelOrders = bids[order.getPrice()].orders;
-    orders[order.getId()] = levelOrders.insert(levelOrders.end(), order);
-    return trades;
-}
-
-std::vector<Trade> OrderBook::addSellOrder(Order order) {
-    std::vector<Trade> trades;
-    for (auto &[price, level] : bids) {
-        if (order.getPrice() > price) {
-            break;
-        }
-        auto buyOrderIt = level.orders.begin();
-        while (buyOrderIt != level.orders.end()) {
-            Quantity filled = buyOrderIt->fill(order);
-            trades.emplace_back(order.getId(), buyOrderIt->getId(), order.getId(), order.getSide(), buyOrderIt->getPrice(), filled);
-            if (buyOrderIt->isFilled()) {
-                orders.erase(buyOrderIt->getId());
-                buyOrderIt = level.orders.erase(buyOrderIt);
-            } else {
-                ++buyOrderIt;
-            }
-            if (order.isFilled()) {
-                return trades;
-            }
-        }
-    }
-    auto & levelOrders = asks[order.getPrice()].orders;
-    orders[order.getId()] = levelOrders.insert(levelOrders.end(), order);
-    return trades;
+    return addOrderImpl(order, std::greater<Price>{},bids, asks);
 }
 
 void OrderBook::cancelOrder(OrderId orderId) {

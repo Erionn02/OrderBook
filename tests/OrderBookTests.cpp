@@ -10,19 +10,19 @@ struct OrderBookTests : Test {
     Order matchingSellOrder{OrderId{3}, OrderType::Market, Quantity{100}, Price{150}, TradeSide::Sell};
 };
 
-TEST_F(OrderBookTests, canAddBuyOrder) {
+TEST_F(OrderBookTests, canAddBuyMarketOrder) {
     order_book.addOrder(buyOrder);
     ASSERT_EQ(order_book.getOrdersCount(), 1);
     ASSERT_EQ(order_book.getOrder(buyOrder.getId()), buyOrder);
 }
 
-TEST_F(OrderBookTests, canAddSellOrder) {
+TEST_F(OrderBookTests, canAddSellMarketOrder) {
     order_book.addOrder(sellOrder);
     ASSERT_EQ(order_book.getOrdersCount(), 1);
     ASSERT_EQ(order_book.getOrder(sellOrder.getId()), sellOrder);
 }
 
-TEST_F(OrderBookTests, canCancelOrder) {
+TEST_F(OrderBookTests, canCancelMarketOrder) {
     order_book.addOrder(buyOrder);
     order_book.cancelOrder(buyOrder.getId());
     ASSERT_EQ(order_book.getOrdersCount(), 0);
@@ -32,7 +32,7 @@ TEST_F(OrderBookTests, canCancelOrder) {
 }
 
 
-TEST_F(OrderBookTests, sellOrderDoesNotFillWhenPricesMismatch) {
+TEST_F(OrderBookTests, sellMarketOrderDoesNotFillWhenPricesMismatch) {
     order_book.addOrder(buyOrder);
     auto trades = order_book.addOrder(sellOrder);
 
@@ -40,7 +40,7 @@ TEST_F(OrderBookTests, sellOrderDoesNotFillWhenPricesMismatch) {
     ASSERT_EQ(order_book.getOrdersCount(), 2);
 }
 
-TEST_F(OrderBookTests, buyOrderDoesNotFillWhenPricesMismatch) {
+TEST_F(OrderBookTests, buyMarketOrderMarketDoesNotFillWhenPricesMismatch) {
     order_book.addOrder(sellOrder);
 
     auto trades = order_book.addOrder(buyOrder);
@@ -48,7 +48,7 @@ TEST_F(OrderBookTests, buyOrderDoesNotFillWhenPricesMismatch) {
     ASSERT_EQ(order_book.getOrdersCount(), 2);
 }
 
-TEST_F(OrderBookTests, buyOrderFillsFullyWhenPricesAndQuantityMatch) {
+TEST_F(OrderBookTests, buyMarketOrderFillsFullyWhenPricesAndQuantityMatch) {
     order_book.addOrder(matchingSellOrder);
 
     auto trades = order_book.addOrder(buyOrder);
@@ -65,7 +65,7 @@ TEST_F(OrderBookTests, buyOrderFillsFullyWhenPricesAndQuantityMatch) {
 }
 
 
-TEST_F(OrderBookTests, sellOrderFillsFullyWhenPricesAndQuantityMatch) {
+TEST_F(OrderBookTests, sellMarketOrderFillsFullyWhenPricesAndQuantityMatch) {
     order_book.addOrder(buyOrder);
 
     auto trades = order_book.addOrder(matchingSellOrder);
@@ -82,7 +82,7 @@ TEST_F(OrderBookTests, sellOrderFillsFullyWhenPricesAndQuantityMatch) {
     ASSERT_EQ(order_book.getOrdersCount(), 0);
 }
 
-TEST_F(OrderBookTests, buyOrderFillsPartially) {
+TEST_F(OrderBookTests, buyMarketOrderFillsPartially) {
     order_book.addOrder(matchingSellOrder);
     Order partialFillOrder{
         OrderId{1}, OrderType::Market, Quantity{matchingSellOrder.getInitialQuantity() / 2}, Price{200}, TradeSide::Buy
@@ -101,7 +101,7 @@ TEST_F(OrderBookTests, buyOrderFillsPartially) {
     ASSERT_EQ(order_book.getOrdersCount(), 1);
 }
 
-TEST_F(OrderBookTests, sellOrderFillsPartially) {
+TEST_F(OrderBookTests, sellMarketOrderFillsPartially) {
     order_book.addOrder(buyOrder);
     Order partialFillOrder{
         OrderId{2}, OrderType::Market, Quantity{buyOrder.getInitialQuantity() / 2}, Price{200}, TradeSide::Sell
@@ -122,7 +122,7 @@ TEST_F(OrderBookTests, sellOrderFillsPartially) {
     ASSERT_EQ(order_book.getOrdersCount(), 1);
 }
 
-TEST_F(OrderBookTests, triesManyExistingOrdersFromSinglePriceLevel) {
+TEST_F(OrderBookTests, triesManyExistingMarketOrdersFromSinglePriceLevel) {
     Order buyOrder1{OrderId{1}, OrderType::Market, Quantity{100}, Price{200}, TradeSide::Buy};
     Order buyOrder2{OrderId{2}, OrderType::Market, Quantity{150}, Price{200}, TradeSide::Buy};
     Order buyOrder3{OrderId{3}, OrderType::Market, Quantity{250}, Price{200}, TradeSide::Buy};
@@ -169,7 +169,7 @@ TEST_F(OrderBookTests, triesManyExistingOrdersFromDifferentPriceLevels) {
               buyOrder4.getInitialQuantity());
 }
 
-TEST_F(OrderBookTests, modifyOrderTest) {
+TEST_F(OrderBookTests, modifyMarketOrderTest) {
     Order buyOrder1{OrderId{1}, OrderType::Market, Quantity{100}, Price{250}, TradeSide::Buy};
 
     order_book.addOrder(buyOrder1);
@@ -179,7 +179,7 @@ TEST_F(OrderBookTests, modifyOrderTest) {
     ASSERT_EQ(order_book.getOrder(buyOrder1.getId()).getPrice(), Price{456});
 }
 
-TEST_F(OrderBookTests, modifyOrderGoesToTheEndOfPriceLevelQueueFifo) {
+TEST_F(OrderBookTests, modifyMarketOrderGoesToTheEndOfPriceLevelQueueFifo) {
     Order buyOrder1{OrderId{1}, OrderType::Market, Quantity{100}, Price{250}, TradeSide::Buy};
     Order buyOrder2{OrderId{2}, OrderType::Market, Quantity{20}, Price{250}, TradeSide::Buy};
     Order buyOrder3{OrderId{3}, OrderType::Market, Quantity{40}, Price{250}, TradeSide::Buy};
@@ -202,3 +202,58 @@ TEST_F(OrderBookTests, modifyOrderGoesToTheEndOfPriceLevelQueueFifo) {
     ASSERT_EQ(order_book.getOrdersCount(), 2);
 }
 
+
+TEST_F(OrderBookTests, FillOrKillDoesNotGetFilledWhenNotEnoughQuantity) {
+    order_book.addOrder({OrderId{1}, OrderType::Market, Quantity{100}, Price{250}, TradeSide::Buy});
+    order_book.addOrder({OrderId{2}, OrderType::Market, Quantity{100}, Price{250}, TradeSide::Buy});
+    auto trades = order_book.addOrder({OrderId{3}, OrderType::FillOrKill, Quantity{300}, Price{250}, TradeSide::Sell});
+
+    ASSERT_TRUE(trades.empty());
+    ASSERT_EQ(order_book.getOrdersCount(), 2); // order discarded
+}
+
+TEST_F(OrderBookTests, FillOrKillDoesNotGetFilledOnPriceMismatch) {
+    order_book.addOrder({OrderId{1}, OrderType::Market, Quantity{100}, Price{240}, TradeSide::Buy});
+    order_book.addOrder({OrderId{2}, OrderType::Market, Quantity{500}, Price{240}, TradeSide::Buy});
+    auto trades = order_book.addOrder({OrderId{3}, OrderType::FillOrKill, Quantity{300}, Price{250}, TradeSide::Sell});
+
+    ASSERT_TRUE(trades.empty());
+    ASSERT_EQ(order_book.getOrdersCount(), 2); // order discarded
+}
+
+TEST_F(OrderBookTests, FillOrKillGetsFilledWhenQuantityAndPriceMatch) {
+    order_book.addOrder({OrderId{1}, OrderType::Market, Quantity{200}, Price{250}, TradeSide::Buy});
+    order_book.addOrder({OrderId{2}, OrderType::Market, Quantity{400}, Price{250}, TradeSide::Buy});
+    auto trades = order_book.addOrder({OrderId{3}, OrderType::FillOrKill, Quantity{300}, Price{250}, TradeSide::Sell});
+
+    ASSERT_EQ(trades.size(), 2);
+    ASSERT_EQ(trades[0].quantity, 200);
+    ASSERT_EQ(trades[0].orderIdA, 3);
+    ASSERT_EQ(trades[0].orderIdB, 1);
+    ASSERT_EQ(trades[1].quantity, 100);
+    ASSERT_EQ(trades[1].orderIdA, 3);
+    ASSERT_EQ(trades[1].orderIdB, 2);
+
+    ASSERT_EQ(order_book.getOrdersCount(), 1); // 1 partial fill, 1 full
+    ASSERT_EQ(order_book.getOrder(OrderId{2}).getQuantity(), 300);
+}
+
+TEST_F(OrderBookTests, FillOrKillGetsFilledWhenQuantityAndPriceMatchMultiLevel) {
+    order_book.addOrder({OrderId{1}, OrderType::Market, Quantity{400}, Price{250}, TradeSide::Buy});
+    order_book.addOrder({OrderId{2}, OrderType::Market, Quantity{200}, Price{260}, TradeSide::Buy});
+    auto trades = order_book.addOrder({OrderId{3}, OrderType::FillOrKill, Quantity{300}, Price{250}, TradeSide::Sell});
+
+    ASSERT_EQ(trades.size(), 2);
+    ASSERT_EQ(trades[0].quantity, 200);
+    ASSERT_EQ(trades[0].price, 260);
+    ASSERT_EQ(trades[0].orderIdA, 3);
+    ASSERT_EQ(trades[0].orderIdB, 2);
+
+    ASSERT_EQ(trades[1].quantity, 100);
+    ASSERT_EQ(trades[1].price, 250);
+    ASSERT_EQ(trades[1].orderIdA, 3);
+    ASSERT_EQ(trades[1].orderIdB, 1);
+
+    ASSERT_EQ(order_book.getOrdersCount(), 1); // 1 partial fill, 1 full
+    ASSERT_EQ(order_book.getOrder(OrderId{1}).getQuantity(), 300);
+}

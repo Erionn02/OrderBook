@@ -1,5 +1,6 @@
-#include <gtest/gtest.h>
 #include "OrderBook.hpp"
+
+#include <gtest/gtest.h>
 
 using namespace ::testing;
 

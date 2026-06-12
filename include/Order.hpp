@@ -1,10 +1,11 @@
 #pragma once
-#include <stdexcept>
-
 #include "BaseTypes.hpp"
 
+#include <algorithm>
 
 struct Order {
+    Order() = default;
+    
     Order(OrderId id, OrderType type, Quantity quantity, Price price, TradeSide side) : id(id), type(type),
         initialQuantity(quantity), quantity(quantity), price(price), side(side) {}
 

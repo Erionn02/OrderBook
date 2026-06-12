@@ -9,11 +9,18 @@
 
 class OrderBook {
 public:
+    OrderBook() = default;
+    OrderBook(const OrderBook&) = delete;
+    OrderBook& operator=(const OrderBook&) = delete;
+    OrderBook(OrderBook&&) = default;
+    OrderBook& operator=(OrderBook&&) = default;
+
     std::vector<Trade> addOrder(Order order);
     void cancelOrder(OrderId orderId);
     void modifyOrder(OrderId orderId, Quantity quantity, Price price);
     std::size_t getOrdersCount() const;
     Order getOrder(OrderId orderId) const;
+    const std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>& getOrders() const { return orders; }
 
 private:
     template<typename Comp, typename OrderMap, typename ToInsertMap>

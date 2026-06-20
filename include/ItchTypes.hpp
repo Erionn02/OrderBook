@@ -488,7 +488,7 @@ namespace ITCH {
         return "<unknown>";
     }
 
-    void printMessage(const Message& message) {
+    void inline printMessage(const Message& message) {
         std::visit([]<typename T>(T&& msg) {
             using CleanType = std::remove_cvref_t<T>;
             constexpr auto real_type_info = std::meta::dealias(^^CleanType);
@@ -504,6 +504,7 @@ namespace ITCH {
             }
         }, message);
     }
+
 
 } // namespace ITCH
 

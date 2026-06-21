@@ -479,7 +479,7 @@ namespace ITCH {
     }
 
     template <typename E>
-    constexpr std::string_view enumToString(E value) {
+    constexpr std::string_view enumToString([[maybe_unused]]E value) {
         template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
             if (value == [:e:]) {
                 return std::meta::identifier_of(e);
@@ -495,8 +495,8 @@ namespace ITCH {
             std::print("{} \n", std::meta::identifier_of(real_type_info));
 
             template for (constexpr auto member : getMembers<CleanType>()) {
-                using real_type = std::remove_cvref_t<decltype(msg.[:member:])>;
-                if constexpr (std::is_enum_v<real_type>) {
+                using FieldType = std::remove_cvref_t<decltype(msg.[:member:])>;
+                if constexpr (std::is_enum_v<FieldType>) {
                     std::print("  - {}: {}\n", std::meta::identifier_of(member), ITCH::enumToString(msg.[:member:]));
                 } else {
                     std::println("  - {}: {}", std::meta::identifier_of(member), msg.[:member:]);
@@ -505,6 +505,27 @@ namespace ITCH {
         }, message);
     }
 
+    template<typename T>
+    T swapEndianness(const char* data) {
+        std::array<char, sizeof(T)> swapped{};
+        for (size_t i = 0; i < sizeof(T); ++i) {
+            swapped[sizeof(T) - 1 - i] = data[i];
+        }
+        return *reinterpret_cast<T*>(swapped.data());
+    }
+
+
+    template<typename T>
+    void swapMessageEndianness(T& msg) {
+        template for (constexpr auto field : getMembers<T>()) {
+            using fieldType = decltype(msg.[:field:]);
+
+            // TODO: that also includes chars/booleans
+            if constexpr (std::is_integral_v<fieldType> || std::is_same_v<fieldType, Timestamp48_t>) {
+                msg.[:field:] = swapEndianness<fieldType>(reinterpret_cast<const char*>(&msg.[:field:]));
+            }
+        }
+    }
 
 } // namespace ITCH
 

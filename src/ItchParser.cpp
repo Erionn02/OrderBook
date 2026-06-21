@@ -1,12 +1,9 @@
 #include "ItchParser.hpp"
 
-#include <print>
-#include <chrono>
 
 namespace ITCH {
     std::vector<Message> ItchParser::parseAll()  {
         std::vector<Message> messages{};
-        auto start = std::chrono::high_resolution_clock::now();
 
         std::uint16_t message_length{};
         [[likely]]
@@ -18,19 +15,11 @@ namespace ITCH {
                 messages.push_back(*msg);
             }
         }
-
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        auto total = successfulReads + failedReads;
-        double speed = (double)total / (double)duration.count() / 1'000.0;
-        std::println("Parsed {} messages in {}, speed: {} M/s", successfulReads + failedReads, duration, speed);
-        std::println("{} successful reading", successfulReads);
-        std::println("{} failed reading", failedReads);
         return messages;
     }
 
     // skips messages that were not parsed properly
-    std::expected<Message, std::string_view> ItchParser::parseNext() {
+    std::expected<Message, std::string> ItchParser::parseNext() {
         std::uint16_t message_length{};
         [[likely]] while (readMessageLength(message_length)) {
             message_length = __builtin_bswap16(message_length);
@@ -48,7 +37,17 @@ namespace ITCH {
         return static_cast<bool>(f.read(reinterpret_cast<char*>(&message_length), sizeof(message_length))) && message_length != 0;
     }
 
-    std::expected<Message, std::string_view> ItchParser::parseMessage(MessageType type, std::uint16_t len) {
+    template <typename E>
+    constexpr bool isValidEnumValue([[maybe_unused]] E parsed_enum) {
+        template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
+            if (parsed_enum == [:e:]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::expected<Message, std::string> ItchParser::parseMessage(MessageType type, std::uint16_t len) {
         template for (constexpr auto msg_type_info : getMessageTypes()) {
             if (type == [:msg_type_info:]::type) {
                 using ResolvedMsgType = [:msg_type_info:];
@@ -67,8 +66,20 @@ namespace ITCH {
                     return std::unexpected(std::format("Failed to read {} bytes to read {} type.", sizeof(ResolvedMsgType), std::meta::identifier_of(msg_type_info)));
                 }
 
+                template for (constexpr auto field_type_info : getMembers<ResolvedMsgType>()) {
+                    using FieldType = std::remove_cvref_t<decltype(msg.[:field_type_info:])>;
+                    if constexpr (std::is_enum_v<FieldType>) {
+                        static_assert(sizeof(FieldType) == 1);
+                        [[unlikely]] if (!isValidEnumValue(msg.[:field_type_info:])) {
+                            ++failedReads;
+                            return std::unexpected{std::format("Char '{}' cannot be parsed to field '{}' of type {} for {} message type.",
+                                static_cast<char>(msg.[:field_type_info:]), std::meta::identifier_of(field_type_info), std::meta::identifier_of(^^FieldType), std::meta::identifier_of(msg_type_info))};
+                        }
+                    }
+                }
+
                 if constexpr (isLittleEndian()) {
-                    changeIntegerFieldsToLittleEndian(msg);
+                    swapMessageEndianness(msg);
                 }
 
                 ++successfulReads;

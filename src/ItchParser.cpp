@@ -8,7 +8,9 @@ namespace ITCH {
         std::uint16_t message_length{};
         [[likely]]
         while (readMessageLength(message_length)) {
-            message_length = __builtin_bswap16(message_length);
+            if constexpr (isLittleEndian()) {
+                message_length = __builtin_bswap16(message_length);
+            }
 
             [[likely]]
             if (auto msg = parseMessage(static_cast<MessageType>(f.get()), message_length); msg) {
@@ -21,8 +23,11 @@ namespace ITCH {
     // skips messages that were not parsed properly
     std::expected<Message, std::string> ItchParser::parseNext() {
         std::uint16_t message_length{};
-        [[likely]] while (readMessageLength(message_length)) {
-            message_length = __builtin_bswap16(message_length);
+        [[likely]]
+        while (readMessageLength(message_length)) {
+            if constexpr (isLittleEndian()) {
+                message_length = __builtin_bswap16(message_length);
+            }
 
             [[likely]]
             if (auto msg = parseMessage(static_cast<MessageType>(f.get()), message_length); msg) {
@@ -52,7 +57,7 @@ namespace ITCH {
             if (type == [:msg_type_info:]::type) {
                 using ResolvedMsgType = [:msg_type_info:];
                 constexpr std::uint16_t expectedMsgSize = sizeof(ResolvedMsgType) + sizeof(MessageType);
-                if (len != expectedMsgSize) {
+                [[unlikely]] if (len != expectedMsgSize) {
                     ++failedReads;
                     std::int64_t skip_message_offset = static_cast<std::int64_t>(len) - static_cast<std::int64_t>(sizeof(MessageType));
                     f.seekg(skip_message_offset, std::ios::cur);

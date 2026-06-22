@@ -54,3 +54,11 @@ endif ()
 add_app(OrderBookBenchmark
         tests/OrderBookBenchmark.cpp
 )
+
+add_app(RealWorldDataOrderBookBenchmark
+        tests/RealWorldDataOrderBookBenchmark.cpp
+)
+
+add_app(ITCHParserBenchmark
+        tests/ITCHParserBenchmark.cpp
+)

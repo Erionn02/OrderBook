@@ -2,6 +2,7 @@
 // Implemented according to https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHSpecification.pdf spec
 // Example feeds can be found here https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH
 
+#include <algorithm>
 #include <array>
 #include <variant>
 #include <meta>
@@ -10,8 +11,9 @@
 namespace ITCH {
 // packing structs to allow implementing protocol specs in an easy way
 #pragma pack(push, 1)
-
-    using Timestamp48_t = std::array<std::uint8_t, 6>; // According to documentation it's treated as nanoseconds since midnight
+    struct is_integral{};
+    
+    using Timestamp48_t = std::array<std::uint8_t, 6>; // According to documentation it's treated as nanoseconds since midnight, also integral type
     using Stock_t = std::array<char, 8>;
     using TrackingNumber_t = std::uint16_t;
     using StockLocate_t = std::uint16_t;
@@ -66,7 +68,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::SystemEvent};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
 
             enum class EventCode: std::uint8_t {
                 StartOfMessages = 'O',
@@ -83,7 +85,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::StockDirectory};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
 
             enum class MarketCategory : std::uint8_t {
@@ -143,7 +145,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::StockTradingAction};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
             enum class TradingState: std::uint8_t {
                 Halted= 'H',
@@ -157,9 +159,9 @@ namespace ITCH {
 
         struct RegSHORestrictionsMessage {
             static constexpr MessageType type{MessageType::RegSHORestrictions};
-            std::uint16_t locate_code;
+            StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
             enum class RegSHOAction : std::uint8_t {
                 NoPriceTest = '0',
@@ -172,7 +174,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::MarketParticipantPosition};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::array<char, 4> mpid;
             Stock_t stock;
             BooleanChar primary_market_maker;
@@ -196,7 +198,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::MWCBDeclineLevel};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Price_64 level1;
             Price_64 level2;
             Price_64 level3;
@@ -206,7 +208,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::MWCBStatus};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             enum class BreachedLevel: std::uint8_t {
                 Level1 = '1',
                 Level2 = '2',
@@ -218,7 +220,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::IPOQuotingPeriodUpdate};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
             int IPOQuotationReleaseTime;
             enum class IPOQuotationReleaseQualifier: std::uint8_t {
@@ -232,7 +234,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::LULDAuctionCollar};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
             Price_32 reference_price;
             Price_32 upper_price;
@@ -244,7 +246,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::OperationalHalt};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
             enum class MarketCode : std::uint8_t {
                 Nasdaq = 'Q',
@@ -261,7 +263,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::AddOrder};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
             Side side;
             std::uint32_t shares;
@@ -273,7 +275,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::AddOrderMPIDAttribution};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
             Side side;
             std::uint32_t shares;
@@ -286,7 +288,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::OrderExecuted};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
             std::uint32_t executed_shares;
             std::size_t match_number;
@@ -296,7 +298,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::OrderExecutedWithPrice};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
             std::uint32_t shares;
             std::size_t match_number;
@@ -308,7 +310,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::OrderCancel};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
             std::uint32_t cancelled_shares;
         };
@@ -317,7 +319,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::OrderDelete};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
         };
 
@@ -325,7 +327,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::OrderReplace};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t original_order_reference_number;
             std::size_t new_order_reference_number;
             std::uint32_t new_quantity;
@@ -336,7 +338,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::NonCrossTrade};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
             Side side;
             std::uint32_t shares;
@@ -349,7 +351,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::CrossTrade};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t shares;
             Stock_t stock;
             Price_32 cross_price;
@@ -365,7 +367,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::BrokenTrade};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t match_number;
         };
 
@@ -373,7 +375,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::NetOrderImbalanceIndicator};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t paired_shares;
             std::size_t imbalance_shares;
             enum class ImbalanceDirection : std::uint8_t {
@@ -416,7 +418,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::RetailInterest};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
             enum class InterestFlag : std::uint8_t {
                 OrdersAvailableOnBuySide = 'B',
@@ -430,7 +432,7 @@ namespace ITCH {
             static constexpr MessageType type{MessageType::DirectListingWithCapitalRaisePriceDiscovery};
             StockLocate_t stock_locate;
             TrackingNumber_t tracking_number;
-            Timestamp48_t timestamp;
+            [[=is_integral{}]] Timestamp48_t timestamp;
             Stock_t stock;
             BooleanChar open_eligibility_status;
             Price_32 minimum_allowable_price;
@@ -497,7 +499,7 @@ namespace ITCH {
             template for (constexpr auto member : getMembers<CleanType>()) {
                 using FieldType = std::remove_cvref_t<decltype(msg.[:member:])>;
                 if constexpr (std::is_enum_v<FieldType>) {
-                    std::print("  - {}: {}\n", std::meta::identifier_of(member), ITCH::enumToString(msg.[:member:]));
+                    std::println("  - {}: {}", std::meta::identifier_of(member), ITCH::enumToString(msg.[:member:]));
                 } else {
                     std::println("  - {}: {}", std::meta::identifier_of(member), msg.[:member:]);
                 }
@@ -514,14 +516,19 @@ namespace ITCH {
         return *reinterpret_cast<T*>(swapped.data());
     }
 
+    consteval bool hasIsIntegralAnnotation(std::meta::info field) {
+        return std::ranges::contains(std::meta::annotations_of(field),
+                                         ^^const is_integral,
+                                         std::meta::type_of);
+    }
 
     template<typename T>
     void swapMessageEndianness(T& msg) {
         template for (constexpr auto field : getMembers<T>()) {
+            constexpr auto field_type_info = std::meta::type_of(field);
             using fieldType = decltype(msg.[:field:]);
-
-            // TODO: that also includes chars/booleans
-            if constexpr (std::is_integral_v<fieldType> || std::is_same_v<fieldType, Timestamp48_t>) {
+            // all integral types are in big endian
+            if constexpr ((sizeof(fieldType) > 1  && std::is_integral_v<fieldType>) || hasIsIntegralAnnotation(field)) {
                 msg.[:field:] = swapEndianness<fieldType>(reinterpret_cast<const char*>(&msg.[:field:]));
             }
         }

@@ -1,37 +1,25 @@
-#include <meta>
 #include <iostream>
 
-#include <simd>
+#include <chrono>
+#include <print>
 
-struct User {
-    std::string name;
-    int age;
-    bool is_active;
-};
-
-template<typename T>
-consteval decltype(auto) getMembers() {
-    return std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::current()));
-}
-
-template <typename T>
-void print_struct_fields(const T& obj) {
-    std::cout << "Iterating over struct: "
-              << std::meta::identifier_of(^^T) << "\n";
-
-    // Wrap the vector returning function in std::define_static_array
-    template for (constexpr auto member : getMembers<T>()) {
-        std::cout << "  - " << std::meta::identifier_of(member)
-                  << ":+ " << obj.[:member:] << '\n';
-    }
-}
-
+#include "ItchParser.hpp"
 
 int main() {
-    User my_user{"Alice", 28, true};
+    ITCH::ItchParser parser{"/home/kuba/CLionProjects/OrderBook/cache/12302019.NASDAQ_ITCH50"};
+    std::size_t message_count{0};
 
-    print_struct_fields(my_user);
+    auto start = std::chrono::high_resolution_clock::now();
 
+    parser.parseAll([&](auto&& message) {
+        ++message_count;
+        if (!message.has_value()) {
+            std::println("Failed to parse message, details: {}", message.error());
+        }
+    });
 
-    return 0;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    double speed = (double)message_count / (double)duration.count() / 1'000.0;
+    std::println("Parsed {} messages in {}, speed: {} M/s", message_count, duration, speed);
 }

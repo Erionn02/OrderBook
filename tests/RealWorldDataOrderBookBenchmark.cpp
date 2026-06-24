@@ -10,9 +10,10 @@ std::vector<ITCH::Message> parsed_itch_for_stock{};
 
 
 
-static void BM_MixedStream(benchmark::State &state) {
+static void BM_MixedStreamRealWorldData(benchmark::State &state) {
     std::size_t messages_processed{0};
     for (auto _: state) {
+        messages_processed = 0;
         OrderBook book;
         for (const ITCH::Message &msg_variant: parsed_itch_for_stock) {
             std::visit([&]<typename T>(T && msg) {
@@ -23,10 +24,20 @@ static void BM_MixedStream(benchmark::State &state) {
                     book.addOrder(order);
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderExecutedMessage>) {
                     ++messages_processed;
-                    // TODO implement
+                    Order order = book.getOrder(msg.order_reference_number);
+                    if (order.getQuantity() > msg.executed_shares) {
+                        book.modifyOrder(msg.order_reference_number, order.getQuantity() - msg.executed_shares, order.getPrice());
+                    } else {
+                        book.cancelOrder(msg.order_reference_number);
+                    }
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderExecutedWithPriceMessage>) {
-                    // TODO implement
                     ++messages_processed;
+                    Order order = book.getOrder(msg.order_reference_number);
+                    if (order.getQuantity() > msg.shares) {
+                        book.modifyOrder(msg.order_reference_number, order.getQuantity() - msg.shares, order.getPrice());
+                    } else {
+                        book.cancelOrder(msg.order_reference_number);
+                    }
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderReplaceMessage>) {
                     Order old_order = book.getOrder(msg.original_order_reference_number);
                     book.cancelOrder(old_order.getId());
@@ -50,10 +61,11 @@ static void BM_MixedStream(benchmark::State &state) {
         }
     }
 
-    state.SetItemsProcessed(static_cast<std::int64_t>(messages_processed));
+    state.SetItemsProcessed(static_cast<std::int64_t>(messages_processed) * state.iterations());
+    state.counters["items_per_iter"] = benchmark::Counter(static_cast<double>(messages_processed), benchmark::Counter::kAvgIterations);
 }
 
-BENCHMARK(BM_MixedStream)->Unit(benchmark::kSecond);
+BENCHMARK(BM_MixedStreamRealWorldData)->Unit(benchmark::kSecond);
 
 
 int main(int argc, char** argv) {

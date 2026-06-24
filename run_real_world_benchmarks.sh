@@ -3,13 +3,19 @@ set -e
 
 test_ticker="AAPL"
 
+if [ $# -ne 0 ]; then
+  test_ticker=$1
+fi
+
+echo "Performing benchmark for $test_ticker"
+
 if [ ! -f ./cache/12302019.NASDAQ_ITCH50 ]; then
   echo "NASDAQ itch file not detected, downloading..."
   ./download_nasdaq_itch.sh
 fi
 
 if [ ! -f ./cache/${test_ticker}.itch ]; then
-  echo "ITCH file for ${test_ticker} not detected, extracti"
+  echo "ITCH file for ${test_ticker} not detected, extracting"
   ./cmake-build-release/apps/ExtractITCHPerTicker ./cache/12302019.NASDAQ_ITCH50 ${test_ticker} ./cache/${test_ticker}.itch
 fi
 

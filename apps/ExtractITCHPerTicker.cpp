@@ -58,5 +58,5 @@ int main(int argc, char **argv) {
     });
 
     std::println("Finished, wrote {} messages", written_messages_count);
-    return written_messages_count != 0;
+    return written_messages_count == 0;
 }

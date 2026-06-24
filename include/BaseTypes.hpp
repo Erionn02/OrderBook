@@ -11,8 +11,8 @@ enum class OrderType : std::uint8_t {
 };
 
 enum class TradeSide : std::uint8_t {
-    Buy,
-    Sell
+    Buy = 'B',
+    Sell = 'S'
 };
 
 using Price = std::int64_t;

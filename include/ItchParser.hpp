@@ -33,6 +33,9 @@ namespace ITCH {
                 handler(parseMessage(static_cast<MessageType>(f.get()), message_length));
             }
         }
+
+        std::size_t getFailedReads() const { return failedReads; }
+        std::size_t getSuccessfulReads() const { return successfulReads; }
     private:
         std::size_t successfulReads{0};
         std::size_t failedReads{0};

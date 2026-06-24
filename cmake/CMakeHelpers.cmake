@@ -58,7 +58,6 @@ function(set_link_options TARGET_NAME)
             -Wdouble-promotion
             -freflection
             -march=native
-            -Wno-error=attributes
     )
 endfunction()
 

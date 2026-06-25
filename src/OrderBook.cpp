@@ -19,13 +19,13 @@ void OrderBook::cancelOrder(OrderId orderId) {
             PriceLevel& level = bids.at(orderIt->getPrice());
             level.orders.erase(orderIt);
             if (level.orders.empty()) {
-                bids.erase(orderId);
+                bids.erase(orderIt->getPrice());
             }
         } else {
             PriceLevel& level = asks.at(orderIt->getPrice());
             level.orders.erase(orderIt);
             if (level.orders.empty()) {
-                asks.erase(orderId);
+                asks.erase(orderIt->getPrice());
             }
         }
         orders.erase(it);

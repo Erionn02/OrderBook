@@ -21,7 +21,8 @@ public:
     std::size_t getOrdersCount() const;
     Order getOrder(OrderId orderId) const;
     const std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>& getOrders() const { return orders; }
-
+    const std::map<Price, PriceLevel, std::greater<>>& getBids() const { return bids; }
+    const std::map<Price, PriceLevel, std::less<>>& getAsks() const { return asks; }
 private:
     template<typename Comp, typename OrderMap, typename ToInsertMap>
     std::vector<Trade> addOrderImpl(Order &order, Comp &&price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
@@ -38,12 +39,14 @@ private:
     template<typename Comp, typename OrderMap, typename ToInsertMap>
     std::vector<Trade> handleMarketOrder(Order &order, Comp &&price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
         std::vector<Trade> trades;
-        for (auto &[price, level]: order_map) {
+        for (auto it = order_map.begin(); it != order_map.end();) {
+            auto &[price, level] = *it;
+
             if (price_comparator(order.getPrice(), price)) {
                 break;
             }
             auto existing_order_it = level.orders.begin();
-            while (existing_order_it != level.orders.end()) {
+            while (existing_order_it != level.orders.end() && !order.isFilled()) {
                 Quantity filled = existing_order_it->fill(order);
                 trades.emplace_back(order.getId(), existing_order_it->getId(), order.getId(), order.getSide(),
                                     existing_order_it->getPrice(), filled);
@@ -53,9 +56,15 @@ private:
                 } else {
                     ++existing_order_it;
                 }
-                if (order.isFilled()) {
-                    return trades;
-                }
+            }
+            if (level.orders.empty()) {
+                it = order_map.erase(it);
+            } else {
+                ++it;
+            }
+
+            if (order.isFilled()) {
+                return trades;
             }
         }
 
@@ -90,7 +99,8 @@ private:
     std::vector<Trade> fillFillOrKillOrder(Order &order, OrderMap& order_map, std::size_t ordersToTradeCount) {
         std::vector<Trade> trades;
         trades.reserve(ordersToTradeCount);
-        for (auto &[price, level]: order_map) {
+        for (auto it = order_map.begin(); it != order_map.end();) {
+            auto &[price, level] = *it;
             auto existing_order_it = level.orders.begin();
             while (existing_order_it != level.orders.end() && ordersToTradeCount--) {
                 Quantity filled = existing_order_it->fill(order);
@@ -103,7 +113,14 @@ private:
                     ++existing_order_it;
                 }
             }
+
+            if (level.orders.empty()) {
+                it = order_map.erase(it);
+            } else {
+                ++it;
+            }
         }
+
         return trades;
     }
 

@@ -9,6 +9,7 @@ struct OrderBookTests : Test {
     Order buyOrder{OrderId{1}, OrderType::Market, Quantity{100}, Price{200}, TradeSide::Buy};
     Order sellOrder{OrderId{2}, OrderType::Market, Quantity{100}, Price{250}, TradeSide::Sell};
     Order matchingSellOrder{OrderId{3}, OrderType::Market, Quantity{100}, Price{150}, TradeSide::Sell};
+    Order matchingBuyOrder{OrderId{4}, OrderType::Market, Quantity{100}, Price{350}, TradeSide::Buy};
 };
 
 TEST_F(OrderBookTests, canAddBuyMarketOrder) {
@@ -23,7 +24,7 @@ TEST_F(OrderBookTests, canAddSellMarketOrder) {
     ASSERT_EQ(order_book.getOrder(sellOrder.getId()), sellOrder);
 }
 
-TEST_F(OrderBookTests, canCancelMarketOrder) {
+TEST_F(OrderBookTests, canCancelBuyMarketOrder) {
     order_book.addOrder(buyOrder);
     order_book.cancelOrder(buyOrder.getId());
     ASSERT_EQ(order_book.getOrdersCount(), 0);
@@ -32,6 +33,34 @@ TEST_F(OrderBookTests, canCancelMarketOrder) {
     ASSERT_EQ(order_book.getOrdersCount(), 1);
 }
 
+TEST_F(OrderBookTests, canCancelSellMarketOrder) {
+    order_book.addOrder(sellOrder);
+    order_book.cancelOrder(sellOrder.getId());
+    ASSERT_EQ(order_book.getOrdersCount(), 0);
+    auto trades = order_book.addOrder(matchingBuyOrder);
+    ASSERT_TRUE(trades.empty()); // no matches, order book cleaned properly
+    ASSERT_EQ(order_book.getOrdersCount(), 1);
+}
+
+TEST_F(OrderBookTests, cancellingLastBidOfferRemovesPriceLevel) {
+    order_book.addOrder(buyOrder);
+    Order buyOrderSamePriceLevel{OrderId{123}, OrderType::Market, Quantity{100}, buyOrder.getPrice(), TradeSide::Buy};
+    order_book.addOrder(buyOrderSamePriceLevel);
+    order_book.cancelOrder(buyOrder.getId());
+    ASSERT_EQ(order_book.getBids().size(), 1);
+    order_book.cancelOrder(buyOrderSamePriceLevel.getId());
+    ASSERT_EQ(order_book.getBids().size(), 0);
+}
+
+TEST_F(OrderBookTests, cancellingLastAskOfferRemovesPriceLevel) {
+    order_book.addOrder(sellOrder);
+    Order sellOrderSamePriceLevel{OrderId{123}, OrderType::Market, Quantity{100}, sellOrder.getPrice(), TradeSide::Sell};
+    order_book.addOrder(sellOrderSamePriceLevel);
+    order_book.cancelOrder(sellOrder.getId());
+    ASSERT_EQ(order_book.getAsks().size(), 1);
+    order_book.cancelOrder(sellOrderSamePriceLevel.getId());
+    ASSERT_EQ(order_book.getAsks().size(), 0);
+}
 
 TEST_F(OrderBookTests, sellMarketOrderDoesNotFillWhenPricesMismatch) {
     order_book.addOrder(buyOrder);
@@ -63,6 +92,8 @@ TEST_F(OrderBookTests, buyMarketOrderFillsFullyWhenPricesAndQuantityMatch) {
     EXPECT_EQ(trade.orderIdB, matchingSellOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 0);
+    ASSERT_EQ(order_book.getAsks().size(), 0);
+    ASSERT_EQ(order_book.getBids().size(), 0);
 }
 
 
@@ -81,6 +112,8 @@ TEST_F(OrderBookTests, sellMarketOrderFillsFullyWhenPricesAndQuantityMatch) {
     EXPECT_EQ(trade.orderIdB, buyOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 0);
+    ASSERT_EQ(order_book.getAsks().size(), 0);
+    ASSERT_EQ(order_book.getBids().size(), 0);
 }
 
 TEST_F(OrderBookTests, buyMarketOrderFillsPartially) {
@@ -100,6 +133,8 @@ TEST_F(OrderBookTests, buyMarketOrderFillsPartially) {
     EXPECT_EQ(trade.orderIdB, matchingSellOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 1);
+    ASSERT_EQ(order_book.getBids().size(), 0);
+    ASSERT_EQ(order_book.getAsks().size(), 1);
 }
 
 TEST_F(OrderBookTests, sellMarketOrderFillsPartially) {
@@ -121,6 +156,8 @@ TEST_F(OrderBookTests, sellMarketOrderFillsPartially) {
     EXPECT_EQ(trade.orderIdB, buyOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 1);
+    ASSERT_EQ(order_book.getBids().size(), 1);
+    ASSERT_EQ(order_book.getAsks().size(), 0);
 }
 
 TEST_F(OrderBookTests, triesManyExistingMarketOrdersFromSinglePriceLevel) {
@@ -211,6 +248,8 @@ TEST_F(OrderBookTests, FillOrKillDoesNotGetFilledWhenNotEnoughQuantity) {
 
     ASSERT_TRUE(trades.empty());
     ASSERT_EQ(order_book.getOrdersCount(), 2); // order discarded
+    ASSERT_EQ(order_book.getBids().size(), 1);
+    ASSERT_EQ(order_book.getAsks().size(), 0);
 }
 
 TEST_F(OrderBookTests, FillOrKillDoesNotGetFilledOnPriceMismatch) {
@@ -220,6 +259,8 @@ TEST_F(OrderBookTests, FillOrKillDoesNotGetFilledOnPriceMismatch) {
 
     ASSERT_TRUE(trades.empty());
     ASSERT_EQ(order_book.getOrdersCount(), 2); // order discarded
+    ASSERT_EQ(order_book.getBids().size(), 1);
+    ASSERT_EQ(order_book.getAsks().size(), 0);
 }
 
 TEST_F(OrderBookTests, FillOrKillGetsFilledWhenQuantityAndPriceMatch) {
@@ -257,4 +298,18 @@ TEST_F(OrderBookTests, FillOrKillGetsFilledWhenQuantityAndPriceMatchMultiLevel) 
 
     ASSERT_EQ(order_book.getOrdersCount(), 1); // 1 partial fill, 1 full
     ASSERT_EQ(order_book.getOrder(OrderId{1}).getQuantity(), 300);
+    ASSERT_EQ(order_book.getBids().size(), 1); // one level cleared
+    ASSERT_EQ(order_book.getAsks().size(), 0);
+}
+
+TEST_F(OrderBookTests, FillOrKillRemovesLevelWhenEmptied) {
+    order_book.addOrder({OrderId{1}, OrderType::Market, Quantity{400}, Price{250}, TradeSide::Buy});
+    order_book.addOrder({OrderId{2}, OrderType::Market, Quantity{200}, Price{260}, TradeSide::Buy});
+    auto trades = order_book.addOrder({OrderId{3}, OrderType::FillOrKill, Quantity{600}, Price{250}, TradeSide::Sell});
+
+    ASSERT_EQ(trades.size(), 2);
+
+    ASSERT_EQ(order_book.getOrdersCount(), 0);
+    ASSERT_EQ(order_book.getBids().size(), 0);
+    ASSERT_EQ(order_book.getAsks().size(), 0);
 }

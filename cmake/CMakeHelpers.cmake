@@ -63,7 +63,12 @@ endfunction()
 
 macro(add_conan_lib LIB)
     find_package(${LIB} REQUIRED)
-    include_directories(${${LIB}_INCLUDE_DIRS})
+    include_directories(SYSTEM ${${LIB}_INCLUDE_DIRS})
+    foreach(_conan_target ${${LIB}_LIBRARIES})
+        if(TARGET ${_conan_target})
+            set_target_properties(${_conan_target} PROPERTIES SYSTEM TRUE)
+        endif()
+    endforeach()
     list(APPEND CONAN_LIBS "${${LIB}_LIBRARIES}")
 endmacro()
 

@@ -3,10 +3,10 @@
 
 
 struct Trade {
-    OrderId orderIdA;
-    OrderId orderIdB;
-    OrderId aggressorId;
-    TradeSide aggressorSide;
+    OrderId order_id_a;
+    OrderId order_id_b;
+    OrderId aggressor_id;
+    TradeSide aggressor_side;
     Price price;
     Quantity quantity;
     bool operator==(const Trade&) const = default;

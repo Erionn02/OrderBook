@@ -65,7 +65,7 @@ namespace ITCH {
                         std::meta::identifier_of(msg_type_info), sizeof(ResolvedMsgType), expectedMsgSize, skip_message_offset));
                 }
 
-                ResolvedMsgType msg{};
+                ResolvedMsgType msg;
                 [[unlikely]] if (!f.read(reinterpret_cast<char*>(&msg), sizeof(ResolvedMsgType))) {
                     ++failedReads;
                     return std::unexpected(std::format("Failed to read {} bytes to read {} type.", sizeof(ResolvedMsgType), std::meta::identifier_of(msg_type_info)));

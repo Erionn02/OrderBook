@@ -17,13 +17,15 @@ public:
 
     std::vector<Trade> addOrder(Order order);
     void cancelOrder(OrderId orderId);
-    void modifyOrder(OrderId orderId, Quantity quantity, Price price);
+    std::vector<Trade> modifyOrder(OrderId orderId, Quantity quantity, Price price);
     std::size_t getOrdersCount() const;
     Order getOrder(OrderId orderId) const;
     const std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>& getOrders() const { return orders; }
     const std::map<Price, PriceLevel, std::greater<>>& getBids() const { return bids; }
     const std::map<Price, PriceLevel, std::less<>>& getAsks() const { return asks; }
 private:
+    void cancelOrderInternal(std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it);
+
     template<typename Comp, typename OrderMap, typename ToInsertMap>
     std::vector<Trade> addOrderImpl(Order &order, Comp &&price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
         switch (order.getType()) {
@@ -123,7 +125,6 @@ private:
 
         return trades;
     }
-
 
 
     std::map<Price, PriceLevel, std::greater<> > bids{};

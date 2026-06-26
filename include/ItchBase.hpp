@@ -513,7 +513,7 @@ namespace ITCH {
         for (size_t i = 0; i < sizeof(T); ++i) {
             swapped[sizeof(T) - 1 - i] = data[i];
         }
-        return *reinterpret_cast<T*>(swapped.data());
+        return *std::start_lifetime_as<T>(swapped.data());
     }
 
     consteval bool hasIsIntegralAnnotation(std::meta::info field) {

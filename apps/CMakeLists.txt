@@ -1,7 +1,11 @@
 include(CMakePrintHelpers)
 
-add_app(${CMAKE_PROJECT_NAME}
-        main.cpp
+add_app(OrderBookPublisher
+        OrderBookPublisher.cpp
+)
+
+add_app(OrderBookSubscriber
+        OrderBookSubscriber.cpp
 )
 
 add_app(ExtractITCHPerTicker

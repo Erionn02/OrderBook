@@ -16,6 +16,7 @@ set(CMAKE_CXX_MODULE_STD ON)
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeHelpers.cmake)
 add_conan_lib(GTest)
 add_conan_lib(benchmark)
+add_conan_lib(asio)
 
 
 

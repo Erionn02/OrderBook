@@ -13,6 +13,10 @@ std::vector<Trade> OrderBook::addOrder(Order order) {
 
 void OrderBook::cancelOrder(OrderId orderId) {
     auto it = orders.find(orderId);
+    cancelOrderInternal(it);
+}
+
+void OrderBook::cancelOrderInternal(std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it) {
     if (it != orders.end()) {
         auto orderIt = it->second;
         if (orderIt->getSide() == TradeSide::Buy) {
@@ -32,11 +36,15 @@ void OrderBook::cancelOrder(OrderId orderId) {
     }
 }
 
-void OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Price price) {
-    auto& order = *orders.at(orderId);
-    Order newOrder{orderId, order.getType(), quantity, price, order.getSide()};
-    cancelOrder(order.getId());
-    addOrder(newOrder);
+std::vector<Trade> OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Price price) {
+    auto it = orders.find(orderId);
+    if (it == orders.end()) {
+        return {};
+    }
+    Order newOrder{orderId, (it->second)->getType(), quantity, price, (it->second)->getSide()};
+    cancelOrderInternal(it);
+
+    return addOrder(newOrder);
 }
 
 std::size_t OrderBook::getOrdersCount() const {

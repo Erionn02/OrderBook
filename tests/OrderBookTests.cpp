@@ -86,10 +86,10 @@ TEST_F(OrderBookTests, buyMarketOrderFillsFullyWhenPricesAndQuantityMatch) {
     auto &trade = trades.front();
     EXPECT_EQ(trade.quantity, buyOrder.getInitialQuantity());
     EXPECT_EQ(trade.price, matchingSellOrder.getPrice());
-    EXPECT_EQ(trade.aggressorId, buyOrder.getId());
-    EXPECT_EQ(trade.aggressorSide, TradeSide::Buy);
-    EXPECT_EQ(trade.orderIdA, buyOrder.getId());
-    EXPECT_EQ(trade.orderIdB, matchingSellOrder.getId());
+    EXPECT_EQ(trade.aggressor_id, buyOrder.getId());
+    EXPECT_EQ(trade.aggressor_side, TradeSide::Buy);
+    EXPECT_EQ(trade.order_id_a, buyOrder.getId());
+    EXPECT_EQ(trade.order_id_b, matchingSellOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 0);
     ASSERT_EQ(order_book.getAsks().size(), 0);
@@ -106,10 +106,10 @@ TEST_F(OrderBookTests, sellMarketOrderFillsFullyWhenPricesAndQuantityMatch) {
     auto &trade = trades.front();
     EXPECT_EQ(trade.quantity, buyOrder.getInitialQuantity());
     EXPECT_EQ(trade.price, buyOrder.getPrice());
-    EXPECT_EQ(trade.aggressorId, matchingSellOrder.getId());
-    EXPECT_EQ(trade.aggressorSide, TradeSide::Sell);
-    EXPECT_EQ(trade.orderIdA, matchingSellOrder.getId());
-    EXPECT_EQ(trade.orderIdB, buyOrder.getId());
+    EXPECT_EQ(trade.aggressor_id, matchingSellOrder.getId());
+    EXPECT_EQ(trade.aggressor_side, TradeSide::Sell);
+    EXPECT_EQ(trade.order_id_a, matchingSellOrder.getId());
+    EXPECT_EQ(trade.order_id_b, buyOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 0);
     ASSERT_EQ(order_book.getAsks().size(), 0);
@@ -127,10 +127,10 @@ TEST_F(OrderBookTests, buyMarketOrderFillsPartially) {
     auto &trade = trades.front();
     EXPECT_EQ(trade.quantity, partialFillOrder.getInitialQuantity());
     EXPECT_EQ(trade.price, matchingSellOrder.getPrice());
-    EXPECT_EQ(trade.aggressorId, partialFillOrder.getId());
-    EXPECT_EQ(trade.aggressorSide, TradeSide::Buy);
-    EXPECT_EQ(trade.orderIdA, partialFillOrder.getId());
-    EXPECT_EQ(trade.orderIdB, matchingSellOrder.getId());
+    EXPECT_EQ(trade.aggressor_id, partialFillOrder.getId());
+    EXPECT_EQ(trade.aggressor_side, TradeSide::Buy);
+    EXPECT_EQ(trade.order_id_a, partialFillOrder.getId());
+    EXPECT_EQ(trade.order_id_b, matchingSellOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 1);
     ASSERT_EQ(order_book.getBids().size(), 0);
@@ -150,10 +150,10 @@ TEST_F(OrderBookTests, sellMarketOrderFillsPartially) {
     auto &trade = trades.front();
     EXPECT_EQ(trade.quantity, partialFillOrder.getInitialQuantity());
     EXPECT_EQ(trade.price, buyOrder.getPrice());
-    EXPECT_EQ(trade.aggressorId, partialFillOrder.getId());
-    EXPECT_EQ(trade.aggressorSide, TradeSide::Sell);
-    EXPECT_EQ(trade.orderIdA, partialFillOrder.getId());
-    EXPECT_EQ(trade.orderIdB, buyOrder.getId());
+    EXPECT_EQ(trade.aggressor_id, partialFillOrder.getId());
+    EXPECT_EQ(trade.aggressor_side, TradeSide::Sell);
+    EXPECT_EQ(trade.order_id_a, partialFillOrder.getId());
+    EXPECT_EQ(trade.order_id_b, buyOrder.getId());
 
     ASSERT_EQ(order_book.getOrdersCount(), 1);
     ASSERT_EQ(order_book.getBids().size(), 1);
@@ -232,9 +232,9 @@ TEST_F(OrderBookTests, modifyMarketOrderGoesToTheEndOfPriceLevelQueueFifo) {
 
     ASSERT_EQ(trades.size(), 2);
     EXPECT_EQ(trades[0].quantity, 20);
-    EXPECT_EQ(trades[0].orderIdB, buyOrder2.getId());
+    EXPECT_EQ(trades[0].order_id_b, buyOrder2.getId());
     EXPECT_EQ(trades[1].quantity, 10);
-    EXPECT_EQ(trades[1].orderIdB, buyOrder3.getId());
+    EXPECT_EQ(trades[1].order_id_b, buyOrder3.getId());
 
     EXPECT_EQ(order_book.getOrder(buyOrder1.getId()).getFilled(), 0); // previous orders filled the incoming order fully
     ASSERT_EQ(order_book.getOrdersCount(), 2);
@@ -270,11 +270,11 @@ TEST_F(OrderBookTests, FillOrKillGetsFilledWhenQuantityAndPriceMatch) {
 
     ASSERT_EQ(trades.size(), 2);
     ASSERT_EQ(trades[0].quantity, 200);
-    ASSERT_EQ(trades[0].orderIdA, 3);
-    ASSERT_EQ(trades[0].orderIdB, 1);
+    ASSERT_EQ(trades[0].order_id_a, 3);
+    ASSERT_EQ(trades[0].order_id_b, 1);
     ASSERT_EQ(trades[1].quantity, 100);
-    ASSERT_EQ(trades[1].orderIdA, 3);
-    ASSERT_EQ(trades[1].orderIdB, 2);
+    ASSERT_EQ(trades[1].order_id_a, 3);
+    ASSERT_EQ(trades[1].order_id_b, 2);
 
     ASSERT_EQ(order_book.getOrdersCount(), 1); // 1 partial fill, 1 full
     ASSERT_EQ(order_book.getOrder(OrderId{2}).getQuantity(), 300);
@@ -288,13 +288,13 @@ TEST_F(OrderBookTests, FillOrKillGetsFilledWhenQuantityAndPriceMatchMultiLevel) 
     ASSERT_EQ(trades.size(), 2);
     ASSERT_EQ(trades[0].quantity, 200);
     ASSERT_EQ(trades[0].price, 260);
-    ASSERT_EQ(trades[0].orderIdA, 3);
-    ASSERT_EQ(trades[0].orderIdB, 2);
+    ASSERT_EQ(trades[0].order_id_a, 3);
+    ASSERT_EQ(trades[0].order_id_b, 2);
 
     ASSERT_EQ(trades[1].quantity, 100);
     ASSERT_EQ(trades[1].price, 250);
-    ASSERT_EQ(trades[1].orderIdA, 3);
-    ASSERT_EQ(trades[1].orderIdB, 1);
+    ASSERT_EQ(trades[1].order_id_a, 3);
+    ASSERT_EQ(trades[1].order_id_b, 1);
 
     ASSERT_EQ(order_book.getOrdersCount(), 1); // 1 partial fill, 1 full
     ASSERT_EQ(order_book.getOrder(OrderId{1}).getQuantity(), 300);

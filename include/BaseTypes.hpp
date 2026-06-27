@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-// will be implemented later
 enum class OrderType : std::uint8_t {
     Market, // if there is not enough liquidity to fill the order, then rest of the order is cancelled
     Limit,

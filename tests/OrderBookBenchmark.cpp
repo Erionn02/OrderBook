@@ -112,10 +112,10 @@ static void BM_MixedStream(benchmark::State &state) {
                     benchmark::DoNotOptimize(book.addOrder(std::get<AddEvent>(ev).order));
                     break;
                 case 1:
-                    book.cancelOrder(std::get<CancelEvent>(ev).targetId);
+                    book.modifyOrder(std::get<ModifyEvent>(ev).targetId, std::get<ModifyEvent>(ev).new_qty, std::get<ModifyEvent>(ev).new_price);
                     break;
                 case 2:
-                    book.modifyOrder(std::get<ModifyEvent>(ev).targetId, std::get<ModifyEvent>(ev).new_qty, std::get<ModifyEvent>(ev).new_price);
+                    book.cancelOrder(std::get<CancelEvent>(ev).targetId);
                     break;
             }
         }

@@ -9,7 +9,7 @@ static std::pair<OrderBook, std::vector<OrderId>> buildPopulatedBook(std::size_t
     static std::map<std::size_t, std::vector<Order>> cache{};
     if (!cache.contains(n)) {
         RealisticGenerator gen{};
-        cache[n] = gen.generateOrders(n, OrderType::Market);
+        cache[n] = gen.generateOrders(n, OrderType::Limit);
     }
     OrderBook book{};
     for (const auto &o: cache[n]) {
@@ -112,10 +112,10 @@ static void BM_MixedStream(benchmark::State &state) {
                     benchmark::DoNotOptimize(book.addOrder(std::get<AddEvent>(ev).order));
                     break;
                 case 1:
-                    book.cancelOrder(std::get<CancelEvent>(ev).targetId);
+                    book.modifyOrder(std::get<ModifyEvent>(ev).targetId, std::get<ModifyEvent>(ev).new_qty, std::get<ModifyEvent>(ev).new_price);
                     break;
                 case 2:
-                    book.modifyOrder(std::get<ModifyEvent>(ev).targetId, std::get<ModifyEvent>(ev).new_qty, std::get<ModifyEvent>(ev).new_price);
+                    book.cancelOrder(std::get<CancelEvent>(ev).targetId);
                     break;
             }
         }

@@ -43,7 +43,7 @@ public:
         }
         TradeSide side = (msg.side == ITCH::Side::Buy) ? TradeSide::Buy : TradeSide::Sell;
         auto price = static_cast<Price>(msg.price);
-        book.addOrder({msg.order_reference_number, OrderType::Market, msg.shares, price, side});
+        book.addOrder({msg.order_reference_number, OrderType::Limit, msg.shares, price, side});
         sendLevelUpdate(price, side);
     }
 
@@ -85,7 +85,7 @@ public:
         sendLevelUpdate(old_price, side);
         auto new_price = static_cast<Price>(msg.new_price);
         book.addOrder({
-            msg.new_order_reference_number, OrderType::Market,
+            msg.new_order_reference_number, OrderType::Limit,
             msg.new_quantity, new_price, side
         });
         sendLevelUpdate(new_price, side);

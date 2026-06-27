@@ -31,7 +31,7 @@ struct MarketParams {
 
     using OrderTypeProbability = std::pair<OrderType, double>;
     std::inplace_vector<OrderTypeProbability, std::meta::enumerators_of(^^OrderType).size()> orderTypeProbability{
-        {OrderType::Market, 0.95},
+        {OrderType::Limit, 0.95},
         {OrderType::FillOrKill, 0.05}
     };
 };
@@ -133,7 +133,7 @@ public:
             Order order = generateOrder();
             events.emplace_back(AddEvent{order});
 
-            if (order.getType() == OrderType::Limit || order.getType() == OrderType::Iceberg) {
+            if (order.getType() == OrderType::Limit) {
                 live_ids.push_back(order.getId());
 
             }
@@ -171,10 +171,10 @@ public:
             }
         }
 
-        return OrderType::Market;
+        return OrderType::Limit;
     }
 
-    std::vector<Order> generateOrders(std::size_t n, OrderType fixed_type = OrderType::Market) {
+    std::vector<Order> generateOrders(std::size_t n, OrderType fixed_type = OrderType::Limit) {
         std::vector<Order> out;
         out.reserve(n);
         for (std::size_t i = 0; i < n; ++i) {

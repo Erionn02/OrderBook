@@ -9,7 +9,7 @@ static std::pair<OrderBook, std::vector<OrderId>> buildPopulatedBook(std::size_t
     static std::map<std::size_t, std::vector<Order>> cache{};
     if (!cache.contains(n)) {
         RealisticGenerator gen{};
-        cache[n] = gen.generateOrders(n, OrderType::Market);
+        cache[n] = gen.generateOrders(n, OrderType::Limit);
     }
     OrderBook book{};
     for (const auto &o: cache[n]) {

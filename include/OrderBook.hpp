@@ -5,8 +5,8 @@
 
 #include <vector>
 #include <map>
-#include <unordered_map>
 #include <utility>
+#include <boost/unordered/unordered_flat_map.hpp>
 
 class OrderBook {
 public:
@@ -22,11 +22,11 @@ public:
 
     std::size_t getOrdersCount() const;
     Order getOrder(OrderId orderId) const;
-    const std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>& getOrders() const { return orders; }
+    const auto& getOrders() const { return orders; }
     const std::map<Price, PriceLevel, std::greater<>>& getBids() const { return bids; }
     const std::map<Price, PriceLevel, std::less<>>& getAsks() const { return asks; }
 private:
-    void cancelOrderInternal(std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it);
+    void cancelOrderInternal(boost::unordered_flat_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it);
 
     template<typename Comp, typename OrderMap, typename ToInsertMap>
     std::vector<Trade> addOrderImpl(Order &order, Comp &&price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
@@ -105,5 +105,5 @@ private:
 
     std::map<Price, PriceLevel, std::greater<> > bids{};
     std::map<Price, PriceLevel, std::less<> > asks{};
-    std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator> orders{};
+    boost::unordered_flat_map<OrderId, decltype(PriceLevel::orders)::iterator> orders{};
 };

@@ -16,7 +16,7 @@ void OrderBook::cancelOrder(OrderId orderId) {
     cancelOrderInternal(it);
 }
 
-void OrderBook::cancelOrderInternal(std::unordered_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it) {
+void OrderBook::cancelOrderInternal(boost::unordered_flat_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it) {
     if (it != orders.end()) {
         auto orderIt = it->second;
         if (orderIt->getSide() == TradeSide::Buy) {

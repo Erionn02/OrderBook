@@ -207,6 +207,43 @@ TEST_F(OrderBookTests, triesManyExistingOrdersFromDifferentPriceLevels) {
               buyOrder4.getInitialQuantity());
 }
 
+TEST_F(OrderBookTests, buyLimitOrderMatchesCheaperAskBelowTopOfBook) {
+    order_book.addOrder({OrderId{1}, OrderType::Limit, Quantity{100}, Price{150}, TradeSide::Sell});
+    order_book.addOrder({OrderId{2}, OrderType::Limit, Quantity{100}, Price{300}, TradeSide::Sell});
+
+    auto trades = order_book.addOrder({OrderId{3}, OrderType::Limit, Quantity{100}, Price{200}, TradeSide::Buy});
+
+    ASSERT_EQ(trades.size(), 1);
+    EXPECT_EQ(trades[0].quantity, 100);
+    EXPECT_EQ(trades[0].price, 150);
+    EXPECT_EQ(trades[0].order_id_b, 1);
+    EXPECT_EQ(trades[0].aggressor_side, TradeSide::Buy);
+
+    ASSERT_EQ(order_book.getOrdersCount(), 1);
+    ASSERT_EQ(order_book.getAsks().size(), 1);
+    ASSERT_EQ(order_book.getBids().size(), 0);
+}
+
+TEST_F(OrderBookTests, buyLimitOrderSweepsAskLevelsFromBestPrice) {
+    order_book.addOrder({OrderId{1}, OrderType::Limit, Quantity{100}, Price{250}, TradeSide::Sell});
+    order_book.addOrder({OrderId{2}, OrderType::Limit, Quantity{20}, Price{225}, TradeSide::Sell});
+    order_book.addOrder({OrderId{3}, OrderType::Limit, Quantity{150}, Price{210}, TradeSide::Sell});
+
+    auto trades = order_book.addOrder({OrderId{4}, OrderType::Limit, Quantity{600}, Price{260}, TradeSide::Buy});
+
+    ASSERT_EQ(trades.size(), 3);
+    EXPECT_EQ(trades[0].price, 210);
+    EXPECT_EQ(trades[0].order_id_b, 3);
+    EXPECT_EQ(trades[1].price, 225);
+    EXPECT_EQ(trades[1].order_id_b, 2);
+    EXPECT_EQ(trades[2].price, 250);
+    EXPECT_EQ(trades[2].order_id_b, 1);
+
+    ASSERT_EQ(order_book.getOrdersCount(), 1);
+    ASSERT_EQ(order_book.getAsks().size(), 0);
+    ASSERT_EQ(order_book.getBids().size(), 1);
+}
+
 TEST_F(OrderBookTests, modifyLimitOrderTest) {
     Order buyOrder1{OrderId{1}, OrderType::Limit, Quantity{100}, Price{250}, TradeSide::Buy};
 

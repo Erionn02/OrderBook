@@ -20,7 +20,7 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
                 using RealType = std::remove_cvref_t<T>;
                 if constexpr (std::is_same_v<RealType, ITCH::AddOrderMessage> || std::is_same_v<RealType, ITCH::AddOrderMPIDAttributionMessage>) {
                     ++messages_processed;
-                    Order order{msg.order_reference_number, OrderType::Limit, msg.shares, msg.price, std::bit_cast<TradeSide>(msg.side)};
+                    Order order{msg.order_reference_number, OrderType::Limit, msg.shares, static_cast<Price>(msg.price), std::bit_cast<TradeSide>(msg.side)};
                     book.addOrder(order);
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderExecutedMessage>) {
                     ++messages_processed;
@@ -41,7 +41,7 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderReplaceMessage>) {
                     Order old_order = book.getOrder(msg.original_order_reference_number);
                     book.cancelOrder(old_order.getId());
-                    Order new_order{msg.new_order_reference_number, OrderType::Limit, msg.new_quantity, msg.new_price, old_order.getSide()};
+                    Order new_order{msg.new_order_reference_number, OrderType::Limit, msg.new_quantity, static_cast<Price>(msg.new_price), old_order.getSide()};
                     book.addOrder(new_order);
                     ++messages_processed;
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderDeleteMessage>) {

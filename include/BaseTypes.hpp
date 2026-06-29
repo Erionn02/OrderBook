@@ -13,6 +13,6 @@ enum class TradeSide : std::uint8_t {
     Sell = 'S'
 };
 
-using Price = std::int64_t;
-using Quantity = std::uint64_t;
+using Price = std::int32_t;
+using Quantity = std::uint32_t;
 using OrderId = std::uint64_t;

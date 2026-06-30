@@ -26,7 +26,13 @@ public:
     const std::map<Price, PriceLevel, std::greater<>>& getBids() const { return bids; }
     const std::map<Price, PriceLevel, std::less<>>& getAsks() const { return asks; }
 private:
-    void cancelOrderInternal(boost::unordered_flat_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it);
+    using BidsMap = std::map<Price, PriceLevel, std::greater<>>;
+    using AsksMap = std::map<Price, PriceLevel, std::less<>>;
+    static_assert(std::is_same_v<BidsMap::iterator, AsksMap::iterator>);
+
+    using OrderHashMap = boost::unordered_flat_map<OrderId, std::pair<decltype(PriceLevel::orders)::iterator, AsksMap::iterator>>;
+
+    void cancelOrderInternal(OrderHashMap::iterator it);
 
     template<typename Comp, typename OrderMap, typename ToInsertMap>
     std::vector<Trade> addOrderImpl(Order &order, Comp &&price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
@@ -80,8 +86,9 @@ private:
             }
         }
         if constexpr (order_type == OrderType::Limit) {
-            auto &levelOrders = to_insert_map[order.getPrice()].orders;
-            orders[order.getId()] = levelOrders.insert(levelOrders.end(), order);
+            auto [price_level_it, _] = to_insert_map.try_emplace(order.getPrice(), PriceLevel{});
+            auto &levelOrders = price_level_it->second.orders;
+            orders.emplace(order.getId(), std::pair{levelOrders.insert(levelOrders.end(), order), price_level_it});
         }
         return trades;
     }
@@ -103,7 +110,8 @@ private:
         return false;
     }
 
-    std::map<Price, PriceLevel, std::greater<> > bids{};
-    std::map<Price, PriceLevel, std::less<> > asks{};
-    boost::unordered_flat_map<OrderId, decltype(PriceLevel::orders)::iterator> orders{};
+    BidsMap bids{};
+    AsksMap asks{};
+
+    OrderHashMap orders{};
 };

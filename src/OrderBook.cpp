@@ -16,20 +16,22 @@ void OrderBook::cancelOrder(OrderId orderId) {
     cancelOrderInternal(it);
 }
 
-void OrderBook::cancelOrderInternal(boost::unordered_flat_map<OrderId, decltype(PriceLevel::orders)::iterator>::iterator it) {
+void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
     if (it != orders.end()) {
-        auto orderIt = it->second;
+        auto orderIt = it->second.first;
         if (orderIt->getSide() == TradeSide::Buy) {
-            PriceLevel& level = bids.at(orderIt->getPrice());
+            auto level_it = it->second.second;
+            PriceLevel& level = level_it->second;
             level.orders.erase(orderIt);
             if (level.orders.empty()) {
-                bids.erase(orderIt->getPrice());
+                bids.erase(level_it);
             }
         } else {
-            PriceLevel& level = asks.at(orderIt->getPrice());
+            auto level_it = it->second.second;
+            PriceLevel& level = level_it->second;
             level.orders.erase(orderIt);
             if (level.orders.empty()) {
-                asks.erase(orderIt->getPrice());
+                asks.erase(level_it);
             }
         }
         orders.erase(it);
@@ -41,7 +43,7 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Pr
     if (it == orders.end()) {
         return {};
     }
-    Order newOrder{orderId, (it->second)->getType(), quantity, price, (it->second)->getSide()};
+    Order newOrder{orderId, (it->second.first)->getType(), quantity, price, (it->second.first)->getSide()};
     cancelOrderInternal(it);
 
     return addOrder(newOrder);
@@ -52,5 +54,5 @@ std::size_t OrderBook::getOrdersCount() const {
 }
 
 Order OrderBook::getOrder(OrderId orderId) const {
-    return *orders.at(orderId);
+    return *orders.at(orderId).first;
 }

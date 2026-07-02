@@ -7,6 +7,7 @@
 #include <map>
 #include <utility>
 #include <boost/unordered/unordered_flat_map.hpp>
+#include "PMA.hpp"
 
 class OrderBook {
 public:

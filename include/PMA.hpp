@@ -82,7 +82,7 @@ public:
     ~packed_memory_array() = default;
 
     iterator begin() {
-        return iterator{this, get_next_live(0)};
+        return iterator{this, test_bit(0)? 0 : get_next_live(0)};
     }
 
     iterator end() {
@@ -90,7 +90,7 @@ public:
     }
 
     const_iterator begin() const {
-        return const_iterator{this, get_next_live(0)};
+        return const_iterator{this, test_bit(0)? 0 : get_next_live(0)};
     }
 
     const_iterator end() const {
@@ -98,7 +98,7 @@ public:
     }
 
     const_iterator cbegin() const {
-        return const_iterator{this, get_next_live(0)};
+        return const_iterator{this, test_bit(0)? 0 : get_next_live(0)};
     }
 
     const_iterator cend() const {
@@ -107,7 +107,7 @@ public:
 
     iterator find(const key_t &key) {
         std::size_t idx = lower_bound_slot(key);
-        if (test_bit(idx) && keys[idx] == key) {
+        if (idx < capacity_ && test_bit(idx) && keys[idx] == key) {
             return iterator{this, idx};
         }
         return end();
@@ -141,10 +141,14 @@ public:
     std::size_t make_room_at(std::size_t idx) {
         if (std::size_t right = get_next_gap(idx + 1); right != npos) {
             std::size_t distance = right - idx;
-            shift_right(right, distance);
+            shift_right(idx, distance);
             return idx;
         }
-        if (std::size_t left = get_prev_gap(idx); left != npos) {
+        std::size_t left;
+        if (idx != 0 && (left = get_prev_gap(idx - 1)) != npos) {
+            if (idx >= capacity_) {
+                return left;
+            }
             std::size_t distance = idx - left;
             shift_left(idx, distance);
             return idx;
@@ -172,11 +176,9 @@ public:
     }
 
     void shift_left(std::size_t start, std::size_t count) {
-        if (start < capacity_) {
-            std::memmove(&keys[start] -1, &keys[start], count * sizeof(key_t));
-            std::memmove(&values[start] -1, &values[start], count * sizeof(value_t));
-            set_unoccupied(start);
-        }
+        std::memmove(&keys[start - count], &keys[start - count - 1], count * sizeof(key_t));
+        std::memmove(&values[start - count], &values[start - count -1], count * sizeof(value_t));
+        set_unoccupied(start);
         set_occupied(start - count);
     }
 
@@ -192,16 +194,16 @@ public:
     }
 
     std::size_t allocate(std::size_t new_capacity) {
-        std::unique_ptr<key_t> keys_buf{keys_allocator.allocate(new_capacity)};
-        std::unique_ptr<value_t> values_buf{values_allocator.allocate(new_capacity)};
+        std::unique_ptr<key_t[]> keys_buf{keys_allocator.allocate(new_capacity)};
+        std::unique_ptr<value_t[]> values_buf{values_allocator.allocate(new_capacity)};
         std::vector<skip_t> new_skip_fields(new_capacity / skip_bits);
 
-        std::size_t new_start{new_capacity / 4};
+        std::size_t offset{new_capacity / 4};
 
-        std::memmove(keys_buf.get() + new_start, keys, capacity_ * sizeof(key_t));
-        std::memmove(values_buf.get() + new_start, values, capacity_ * sizeof(value_t));
+        std::memmove(keys_buf.get() + offset, keys, capacity_ * sizeof(key_t));
+        std::memmove(values_buf.get() + offset, values, capacity_ * sizeof(value_t));
 
-        std::memmove(reinterpret_cast<char*>(new_skip_fields.data()) + new_start / sizeof(skip_t), used_fields.data(), used_fields.size() * sizeof(key_t));
+        std::memmove(reinterpret_cast<char*>(new_skip_fields.data()) + offset / sizeof(skip_t), used_fields.data(), used_fields.size() * sizeof(key_t));
 
         keys_allocator.deallocate(keys, capacity_);
         values_allocator.deallocate(values, capacity_);
@@ -210,11 +212,11 @@ public:
         values = values_buf.release();
         capacity_ = new_capacity;
         if (beg != npos) {
-            beg += new_start;
+            beg += offset;
         }
         used_fields = std::move(new_skip_fields);
 
-        return new_start;
+        return offset;
     }
 
     std::size_t size() const noexcept {
@@ -254,19 +256,19 @@ private:
     }
 
     void flip_bit(std::size_t idx) {
-        used_fields[idx/skip_bits] ^= (1 << (idx % skip_bits));
+        used_fields[idx/skip_bits] ^= (skip_t{1} << (idx % skip_bits));
     }
 
     bool test_bit(std::size_t idx) const {
-        return used_fields[idx/skip_bits] & (1 << (idx % skip_bits));
+        return used_fields[idx/skip_bits] & (skip_t{1} << (idx % skip_bits));
     }
 
     void set_occupied(std::size_t idx) {
-        used_fields[idx/skip_bits] |=  1 << (idx % skip_bits);
+        used_fields[idx/skip_bits] |=  skip_t{1} << (idx % skip_bits);
     }
 
     void set_unoccupied(std::size_t idx) {
-        used_fields[idx/skip_bits] &= ~(1 << (idx % skip_bits));
+        used_fields[idx/skip_bits] &= ~(skip_t{1} << (idx % skip_bits));
     }
 
     template<typename F>
@@ -278,16 +280,16 @@ private:
         std::size_t skip_vec_idx{idx/skip_bits};
         std::size_t bit = idx % skip_bits;
 
-        std::size_t mask = std::numeric_limits<std::size_t>::max() >> bit;
+        std::size_t mask = (bit == skip_bits -1) ? std::size_t{0} : std::numeric_limits<std::size_t>::max() << bit + 1;
         std::size_t current_word = operation_on_bit_field(used_fields[skip_vec_idx]) & mask;
 
         if (current_word != 0) {
-            return idx - bit + static_cast<std::size_t>(std::countl_zero(current_word));
+            return skip_vec_idx * skip_bits + static_cast<std::size_t>(std::countr_zero(current_word));
         }
 
         for (std::size_t i = skip_vec_idx + 1; i < used_fields.size(); ++i) {
             if (operation_on_bit_field(used_fields[i]) != 0) {
-                return (i * skip_bits) + std::countl_zero(operation_on_bit_field(used_fields[i]));
+                return (i * skip_bits) + std::countr_zero(operation_on_bit_field(used_fields[i]));
             }
         }
         return npos;
@@ -313,17 +315,17 @@ private:
         std::size_t skip_vec_idx{idx/skip_bits};
         std::size_t bit = idx % skip_bits;
 
-        std::size_t mask = std::numeric_limits<std::size_t>::max() << bit;
+        std::size_t mask = bit == 0 ? 0: std::numeric_limits<std::size_t>::max() >> (64 - bit);
         std::size_t current_word = operation_on_bit_field(used_fields[skip_vec_idx]) & mask;
         if (current_word != 0) {
-            return skip_vec_idx * skip_bits + static_cast<std::size_t>(std::countr_zero(current_word));
+            return skip_vec_idx * skip_bits + (skip_bits - 1 - static_cast<std::size_t>(std::countl_zero(current_word)));
         }
 
         while (skip_vec_idx != 0) {
             --skip_vec_idx;
-            current_word = used_fields[skip_vec_idx];
-            if (operation_on_bit_field(current_word) != 0) {
-                return (skip_vec_idx * skip_bits) + (skip_bits - std::countr_zero(operation_on_bit_field(current_word)));
+            std::size_t word = operation_on_bit_field(used_fields[skip_vec_idx]);
+            if (word != 0) {
+                return (skip_vec_idx * skip_bits) + (skip_bits - 1 - static_cast<std::size_t>(std::countl_zero(word)));
             }
         }
 

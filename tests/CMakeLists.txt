@@ -6,6 +6,6 @@ package_add_test(OrderBookTests
         DEPENDS OrderBookLib
         )
 
-package_add_test(DSVectorTests
+package_add_test(PMATests
         SOURCES PMATests.cpp
 )

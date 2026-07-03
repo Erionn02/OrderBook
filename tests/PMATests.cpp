@@ -1,10 +1,12 @@
-#include "PMA.hpp"
-
 #include <gtest/gtest.h>
 
 #include <random>
 #include <set>
 #include <vector>
+#include <print>
+
+#define private public
+#include "PMA.hpp"
 
 using namespace ::testing;
 
@@ -25,13 +27,66 @@ namespace {
 
         std::vector<int> toVector() const {
             std::vector<int> v;
-            for (auto& val: ds) v.push_back(val);
+            int i{0};
+            for (auto it = ds.begin(); it != ds.end(); ++it) {
+                std::println("{}", ++i);
+                v.push_back(*it);
+            }
             return v;
         }
     };
 } // namespace
 
-TEST(DSVectorTests, EmptyContainer) {
+TEST(PMATests, get_next_live_test) {
+    packed_memory_array<int, int> ds{};
+    ASSERT_EQ(ds.get_next_live(0), -1);
+    ASSERT_EQ(ds.get_next_live(1000), -1);
+    ds.set_occupied(15);
+    ds.set_occupied(17);
+    ASSERT_EQ(ds.get_next_live(15), 17);
+    ASSERT_EQ(ds.get_next_live(50), -1);
+    ASSERT_EQ(ds.get_next_live(17), -1);
+    ASSERT_EQ(ds.get_next_live(14), 15);
+    ds.set_occupied(0);
+    ASSERT_EQ(ds.get_next_live(0), 15);
+}
+
+TEST(PMATests, get_next_gap_test) {
+    packed_memory_array<int, int> ds{};
+    ASSERT_EQ(ds.get_next_gap(0), 1);
+    ASSERT_EQ(ds.get_next_gap(1000), -1);
+    ds.set_occupied(15);
+    ds.set_occupied(20);
+    ASSERT_EQ(ds.get_next_gap(14), 16);
+    ASSERT_EQ(ds.get_next_gap(19), 21);
+    ASSERT_EQ(ds.get_next_gap(22), 23);
+    ASSERT_EQ(ds.get_next_gap(63), -1);
+}
+
+
+TEST(PMATests, get_prev_live_test) {
+    packed_memory_array<int, int> ds{};
+    ds.set_occupied(15);
+    ds.set_occupied(17);
+    ASSERT_EQ(ds.get_prev_live(17), 15);
+    ASSERT_EQ(ds.get_prev_live(50), 17);
+    ASSERT_EQ(ds.get_prev_live(15), -1);
+    ASSERT_EQ(ds.get_prev_live(10000), 17);
+}
+
+TEST(PMATests, get_prev_gap_test) {
+    packed_memory_array<int, int> ds{};
+    ds.set_occupied(15);
+    ds.set_occupied(20);
+    ASSERT_EQ(ds.get_prev_gap(16), 14);
+    ASSERT_EQ(ds.get_prev_gap(14), 13);
+    ASSERT_EQ(ds.get_prev_gap(21), 19);
+    ASSERT_EQ(ds.get_prev_gap(0), -1);
+    ds.set_occupied(0);
+}
+
+
+TEST(PMATests, EmptyContainer) {
     IntSet s;
     EXPECT_EQ(s.size(), 0u);
     EXPECT_TRUE(s.ds.empty());
@@ -39,14 +94,14 @@ TEST(DSVectorTests, EmptyContainer) {
     EXPECT_FALSE(s.contains(42));
 }
 
-TEST(DSVectorTests, InsertKeepsSortedOrder) {
+TEST(PMATests, InsertKeepsSortedOrder) {
     IntSet s;
     for (int x: {5, 1, 9, 3, 7, 2, 8, 4, 6, 0}) s.insert(x);
     EXPECT_EQ(s.size(), 10u);
     EXPECT_EQ(s.toVector(), (std::vector<int>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}));
 }
 
-TEST(DSVectorTests, DuplicateInsertRejected) {
+TEST(PMATests, DuplicateInsertRejected) {
     packed_memory_array<int, int> ds;
     EXPECT_TRUE(ds.insert(5, 5).second);
     auto [it, inserted] = ds.insert(5, 5);
@@ -55,7 +110,7 @@ TEST(DSVectorTests, DuplicateInsertRejected) {
     EXPECT_EQ(ds.size(), 1u);
 }
 
-TEST(DSVectorTests, FindAndLowerBound) {
+TEST(PMATests, FindAndLowerBound) {
     packed_memory_array<int, int> ds;
     for (int x: {10, 20, 30, 40, 50}) ds.insert(x, x);
     EXPECT_EQ(*ds.find(30), 30);
@@ -66,7 +121,7 @@ TEST(DSVectorTests, FindAndLowerBound) {
     EXPECT_EQ(ds.lower_bound(51), ds.end());
 }
 
-TEST(DSVectorTests, EraseIsO1AndIterationSkipsGaps) {
+TEST(PMATests, EraseIsO1AndIterationSkipsGaps) {
     IntSet s;
     for (int i = 0; i < 20; ++i) s.insert(i);
     for (int i = 0; i < 20; i += 2)
@@ -75,7 +130,7 @@ TEST(DSVectorTests, EraseIsO1AndIterationSkipsGaps) {
     EXPECT_EQ(s.toVector(), (std::vector<int>{1, 3, 5, 7, 9, 11, 13, 15, 17, 19}));
 }
 
-TEST(DSVectorTests, EraseReturnsNextLive) {
+TEST(PMATests, EraseReturnsNextLive) {
     packed_memory_array<int, int> ds;
     for (int x: {1, 2, 3, 4, 5}) ds.insert(x, x);
     auto next = ds.erase(ds.find(3));
@@ -83,7 +138,7 @@ TEST(DSVectorTests, EraseReturnsNextLive) {
     EXPECT_EQ(*next, 4);
 }
 
-TEST(DSVectorTests, GrowsThroughManyInserts) {
+TEST(PMATests, GrowsThroughManyInserts) {
     IntSet s;
     constexpr int N = 50000;
     for (int i = N - 1; i >= 0; --i) s.insert(i);
@@ -94,7 +149,7 @@ TEST(DSVectorTests, GrowsThroughManyInserts) {
     EXPECT_EQ(expected, N);
 }
 
-TEST(DSVectorTests, ReverseAndMiddleInsertStress) {
+TEST(PMATests, ReverseAndMiddleInsertStress) {
     IntSet s;
     for (int i = 0; i < 2000; i += 2) s.insert(i);
     for (int i = 1; i < 2000; i += 2) s.insert(i);
@@ -104,7 +159,7 @@ TEST(DSVectorTests, ReverseAndMiddleInsertStress) {
         ASSERT_EQ(v, expected++);
 }
 
-TEST(DSVectorTests, RandomizedOracleVsStdSet) {
+TEST(PMATests, RandomizedOracleVsStdSet) {
     IntSet s;
     std::set<int> oracle;
     std::mt19937 rng(12345);
@@ -150,7 +205,7 @@ namespace {
     };
 } // namespace
 
-TEST(DSVectorTests, ConstructDestroyBalance) {
+TEST(PMATests, ConstructDestroyBalance) {
     g_live = 0; {
         packed_memory_array<int, Counted> ds;
         std::mt19937 rng(99);
@@ -175,7 +230,7 @@ TEST(DSVectorTests, ConstructDestroyBalance) {
     EXPECT_EQ(g_live, 0);
 }
 
-TEST(DSVectorTests, RandomizedOracleDescendingWideRange) {
+TEST(PMATests, RandomizedOracleDescendingWideRange) {
     packed_memory_array<int, int, std::greater<int> > ds;
     std::set<int, std::greater<int> > oracle;
     std::mt19937 rng(777);
@@ -216,7 +271,7 @@ TEST(DSVectorTests, RandomizedOracleDescendingWideRange) {
     }
 }
 
-TEST(DSVectorTests, ValueLookupByKey) {
+TEST(PMATests, ValueLookupByKey) {
     packed_memory_array<int, Counted> ds;
     g_live = 0;
     for (int x: {100, 50, 150, 25, 75}) ds.insert(x, Counted{x});

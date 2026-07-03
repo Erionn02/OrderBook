@@ -48,13 +48,13 @@ public:
         }
 
         basic_iterator &operator++() {
-            idx = cont->get_next_live(idx+1);
+            idx = cont->get_next_live(idx);
             return *this;
         }
 
         basic_iterator operator++(int) {
             auto cp = *this;
-            idx = cont->get_next_live(idx + 1);
+            idx = cont->get_next_live(idx);
             return cp;
         }
 
@@ -209,6 +209,8 @@ public:
         values_allocator.deallocate(values, capacity_);
 
         keys = keys_buf.release();
+        fill_gap(0, offset, keys[offset]);
+        fill_gap(3 * offset, capacity_, keys[3 * offset]);
         values = values_buf.release();
         capacity_ = new_capacity;
         if (beg != npos) {
@@ -233,14 +235,17 @@ public:
 
 private:
     std::size_t lower_bound_slot(const key_t& key) const {
+        if (size_ == 0) {
+            return capacity_;
+        }
         std::size_t low{0};
         std::size_t high{capacity_};
         while (low < high) {
             auto mid = (low + high) / 2;
-            if (compare(key, keys[mid])) {
-                high = mid;
-            } else {
+            if (compare(keys[mid], key)) {
                 low = mid + 1;
+            } else {
+                high = mid;
             }
         }
         return low;
@@ -251,8 +256,25 @@ private:
         keys[idx] = key;
         std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
         set_occupied(idx);
+        std::size_t start = get_prev_live(idx) + 1;
+        std::size_t end {idx};
+        std::size_t next = idx + 1;
+        if (next < capacity_ && compare(keys[next], key)) {
+            end = get_next_live(idx);
+            if (end == npos) {
+                end = capacity_;
+            }
+        }
+
+        fill_gap(start, end, key);
         ++size_;
         return {iterator{this, idx}, true};
+    }
+
+    void fill_gap(std::size_t start, std::size_t end, key_t key) {
+        for (std::size_t idx{start}; idx < end; ++idx) {
+            keys[idx] = key;
+        }
     }
 
     void flip_bit(std::size_t idx) {

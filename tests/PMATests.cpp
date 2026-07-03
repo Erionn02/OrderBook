@@ -29,10 +29,18 @@ namespace {
             std::vector<int> v;
             int i{0};
             for (auto it = ds.begin(); it != ds.end(); ++it) {
-                std::println("{}", ++i);
                 v.push_back(*it);
             }
             return v;
+        }
+
+        void print(int x) const {
+            std::vector<int> v;
+            for (auto it = ds.begin(); it != ds.end(); ++it) {
+                v.push_back(*it);
+            }
+            std::vector<int> keys_vec(ds.keys, ds.keys+ ds.capacity_);
+            std::println("after insert [{}], live: {} \n keys: {} \n", x, v, keys_vec);
         }
     };
 } // namespace
@@ -72,6 +80,9 @@ TEST(PMATests, get_prev_live_test) {
     ASSERT_EQ(ds.get_prev_live(50), 17);
     ASSERT_EQ(ds.get_prev_live(15), -1);
     ASSERT_EQ(ds.get_prev_live(10000), 17);
+    ASSERT_EQ(ds.get_prev_live(0), -1);
+    ds.set_occupied(0);
+    ASSERT_EQ(ds.get_prev_live(0), -1);
 }
 
 TEST(PMATests, get_prev_gap_test) {
@@ -96,7 +107,10 @@ TEST(PMATests, EmptyContainer) {
 
 TEST(PMATests, InsertKeepsSortedOrder) {
     IntSet s;
-    for (int x: {5, 1, 9, 3, 7, 2, 8, 4, 6, 0}) s.insert(x);
+    for (int x: {5, 1, 9, 3, 7, 2, 8, 4, 6, 0}) {
+        s.insert(x);
+        s.print(x);
+    }
     EXPECT_EQ(s.size(), 10u);
     EXPECT_EQ(s.toVector(), (std::vector<int>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}));
 }

@@ -7,5 +7,5 @@ package_add_test(OrderBookTests
         )
 
 package_add_test(PMATests
-        SOURCES PMATests.cpp
+        SOURCES PackedMemoryArrayTests.cpp
 )

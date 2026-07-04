@@ -2,11 +2,11 @@
 
 #include <vector>
 #include <bit>
-#include <ranges>
-#include <boost/container/devector.hpp>
+#include <cstring>
 #include <memory>
+#include <ranges>
 
-
+// here I try to keep consistency with stl-like naming sice it's stl-like container, but for very specific use-case
 
 template<typename Key_, typename Value_, typename Compare = std::less<>>
 class packed_memory_array {
@@ -73,13 +73,41 @@ public:
     static constexpr std::size_t skip_bits{sizeof(skip_t) * 8};
     static constexpr std::size_t npos{static_cast<std::size_t>(-1)};
     static constexpr std::size_t scaling_factor{2};
-    static constexpr std::size_t alloc_min_chunk{64};
+    static constexpr std::size_t alloc_min_chunk{128};
 
     packed_memory_array() {
         allocate(alloc_min_chunk);
+        fill_gap(0, capacity_, key_t{});
     }
 
-    ~packed_memory_array() = default;
+    packed_memory_array(const packed_memory_array &) = delete;
+    packed_memory_array& operator=(const packed_memory_array &) = delete;
+
+    packed_memory_array(packed_memory_array&& other) noexcept {
+        other.keys = std::exchange(keys, nullptr);
+        other.values = std::exchange(values, nullptr);
+        other.capacity_ = std::exchange(capacity_, 0);
+        other.size_ = std::exchange(size_, 0);
+        other.used_fields = std::move(used_fields);
+        other.keys_allocator = std::move(keys_allocator);
+        other.values_allocator = std::move(values_allocator);
+    }
+
+    packed_memory_array& operator=(packed_memory_array&& other) noexcept {
+        deallocate();
+        other.keys = std::exchange(keys, nullptr);
+        other.values = std::exchange(values, nullptr);
+        other.capacity_ = std::exchange(capacity_, 0);
+        other.size_ = std::exchange(size_, 0);
+        other.used_fields = std::move(used_fields);
+        other.keys_allocator = std::move(keys_allocator);
+        other.values_allocator = std::move(values_allocator);
+        return *this;
+    }
+
+    ~packed_memory_array() {
+        deallocate();
+    }
 
     iterator begin() {
         return iterator{this, test_bit(0)? 0 : get_next_live(0)};
@@ -107,7 +135,15 @@ public:
 
     iterator find(const key_t &key) {
         std::size_t idx = lower_bound_slot(key);
-        if (idx < capacity_ && test_bit(idx) && keys[idx] == key) {
+        if (idx >= capacity_) {
+            return end();
+        }
+
+        if (!test_bit(idx)) {
+            idx = get_next_live(idx);
+        }
+
+        if (idx != npos && keys[idx] == key) {
             return iterator{this, idx};
         }
         return end();
@@ -115,110 +151,62 @@ public:
 
     iterator lower_bound(const key_t &key) {
         std::size_t idx = lower_bound_slot(key);
-        return iterator{this, get_next_live(idx)};
+        if (idx >= capacity_) {
+            return end();
+        }
+        if (!test_bit(idx)) {
+            idx = get_next_live(idx);
+        }
+        return iterator{this, idx};
     }
 
     template<typename Val>
     std::pair<iterator, bool> insert(key_t key, Val && value) {
+        if (size_ == 0) {
+            return insert_at(key, std::forward<Val>(value), capacity_ / 2);
+        }
+
         std::size_t idx = lower_bound_slot(key);
 
-        if (idx < capacity_  && !test_bit(idx)) {
+        if (idx == capacity_) {
+            return insert_at(key, std::forward<Val>(value), append_slot());
+        }
+
+        if (keys[idx] == key) {
+            std::size_t live_idx = test_bit(idx) ? idx : get_next_live(idx);
+            return {iterator{this, live_idx}, false};
+        }
+
+        if (!test_bit(idx)) {
             return insert_at(key, std::forward<Val>(value), idx);
-        }
-
-        if (idx < capacity_ && key == keys[idx]) {
-            return {iterator{this, idx}, false};
-        }
-
-        std::size_t next = idx + 1;
-        if (next < capacity_ && !test_bit(next)) {
-            return insert_at(key, std::forward<Val>(value), next);
         }
 
         return insert_at(key, std::forward<Val>(value), make_room_at(idx));
     }
 
-    std::size_t make_room_at(std::size_t idx) {
-        if (std::size_t right = get_next_gap(idx + 1); right != npos) {
-            std::size_t distance = right - idx;
-            shift_right(idx, distance);
-            return idx;
-        }
-        std::size_t left;
-        if (idx != 0 && (left = get_prev_gap(idx - 1)) != npos) {
-            if (idx >= capacity_) {
-                return left;
-            }
-            std::size_t distance = idx - left;
-            shift_left(idx, distance);
-            return idx;
-        }
-
-        if (idx < capacity_ / 2) {
-            idx += allocate(capacity_ * scaling_factor);
-            std::size_t left = get_prev_gap(idx);
-            std::size_t distance = idx - left;
-            shift_left(idx, distance);
-            return idx;
-        }
-        idx += allocate(capacity_ * scaling_factor);
-        std::size_t right = get_next_gap(idx);
-        std::size_t distance = right - idx;
-        shift_right(idx, distance);
-        return idx;
-    }
-
-    void shift_right(std::size_t start, std::size_t count) {
-        std::memmove(&keys[start] + 1, &keys[start], count * sizeof(key_t));
-        std::memmove(&values[start] + 1, &values[start], count * sizeof(value_t));
-        set_unoccupied(start);
-        set_occupied(start + count);
-    }
-
-    void shift_left(std::size_t start, std::size_t count) {
-        std::memmove(&keys[start - count], &keys[start - count - 1], count * sizeof(key_t));
-        std::memmove(&values[start - count], &values[start - count -1], count * sizeof(value_t));
-        set_unoccupied(start);
-        set_occupied(start - count);
+    iterator erase(const key_t &key) {
+        return erase(find(key));
     }
 
     iterator erase(iterator it) {
-        if (it.idx == npos) {
+        if (it == end()) {
             return end();
         }
+        std::size_t idx = it.idx;
         --size_;
-        set_unoccupied(it.idx);
-        std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[it.idx]);
+        set_unoccupied(idx);
+        std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
 
-        return iterator{this, get_next_live(it.idx + 1)};
-    }
-
-    std::size_t allocate(std::size_t new_capacity) {
-        std::unique_ptr<key_t[]> keys_buf{keys_allocator.allocate(new_capacity)};
-        std::unique_ptr<value_t[]> values_buf{values_allocator.allocate(new_capacity)};
-        std::vector<skip_t> new_skip_fields(new_capacity / skip_bits);
-
-        std::size_t offset{new_capacity / 4};
-
-        std::memmove(keys_buf.get() + offset, keys, capacity_ * sizeof(key_t));
-        std::memmove(values_buf.get() + offset, values, capacity_ * sizeof(value_t));
-
-        std::memmove(reinterpret_cast<char*>(new_skip_fields.data()) + offset / sizeof(skip_t), used_fields.data(), used_fields.size() * sizeof(key_t));
-
-        keys_allocator.deallocate(keys, capacity_);
-        values_allocator.deallocate(values, capacity_);
-
-        keys = keys_buf.release();
-        fill_gap(0, offset, keys[offset]);
-        fill_gap(3 * offset, capacity_, keys[3 * offset]);
-        values = values_buf.release();
-        capacity_ = new_capacity;
-        if (beg != npos) {
-            beg += offset;
+        std::size_t next_live = get_next_live(idx);
+        std::size_t prev_live = get_prev_live(idx);
+        std::size_t start = prev_live + 1;
+        if (next_live != npos) {
+            fill_gap(start, next_live, keys[next_live]);
+        } else if (prev_live != npos) {
+            fill_gap(start, capacity_, keys[prev_live]);
         }
-        used_fields = std::move(new_skip_fields);
 
-        return offset;
+        return iterator{this, next_live};
     }
 
     std::size_t size() const noexcept {
@@ -234,9 +222,105 @@ public:
     }
 
 private:
+        std::size_t make_room_at(std::size_t idx) {
+        if (std::size_t right = get_next_gap(idx); right != npos) {
+            std::size_t to_move_count = right - idx;
+            shift_right(idx, to_move_count);
+            return idx;
+        }
+        if (std::size_t left = get_prev_gap(idx); left != npos) {
+            // we know that idx points to an element greater than we want to insert, so we want to see if we can
+            // move left part of the array so we could insert before that that key
+            std::size_t prev_idx = idx - 1;
+            std::size_t to_move_count = prev_idx - left;
+            shift_left(prev_idx, to_move_count);
+            return prev_idx;
+        }
+
+        // we didn't find a gap so after allocation it must be in both left and right end of the old buffer, offset adjusted
+        if (idx < capacity_ / 2) {
+            std::size_t offset = allocate(capacity_ * scaling_factor);
+            idx += offset;
+            std::size_t left = offset - 1;
+            std::size_t prev_idx = idx - 1;
+            std::size_t to_move_count = prev_idx - left;
+
+            shift_left(prev_idx, to_move_count);
+            return prev_idx;
+        }
+        std::size_t offset = allocate(capacity_ * scaling_factor);
+        idx += offset;
+        std::size_t next_gap_location = 3 * offset;
+        shift_right(idx,  next_gap_location - idx);
+        return idx;
+    }
+
+    std::size_t rightmost_live() const {
+        for (auto [idx, word]: used_fields | std::views::enumerate | std::views::reverse) {
+            if (word != 0) {
+                return idx * skip_bits + (skip_bits - 1 - static_cast<std::size_t>(std::countl_zero(word)));
+            }
+        }
+        return npos;
+    }
+
+    std::size_t append_slot() {
+        std::size_t m = rightmost_live();
+        if (m + 1 < capacity_) {
+            return m + 1;
+        }
+        allocate(capacity_ * scaling_factor);
+        return rightmost_live() + 1;
+    }
+
+    void shift_right(std::size_t start, std::size_t count) {
+        std::memmove(&keys[start] + 1, &keys[start], count * sizeof(key_t));
+        std::memmove(&values[start] + 1, &values[start], count * sizeof(value_t));
+        set_occupied(start + count);
+        set_unoccupied(start);
+    }
+
+    void shift_left(std::size_t start, std::size_t count) {
+        std::memmove(&keys[start - count], &keys[start - count + 1], count * sizeof(key_t));
+        std::memmove(&values[start - count], &values[start - count + 1], count * sizeof(value_t));
+        set_occupied(start - count);
+        set_unoccupied(start);
+    }
+
+    void deallocate() {
+        for (std::size_t idx = test_bit(0) ? 0 : get_next_live(0); idx != npos; idx = get_next_live(idx)) {
+            std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
+        }
+        keys_allocator.deallocate(keys, capacity_);
+        values_allocator.deallocate(values, capacity_);
+    }
+
+    std::size_t allocate(std::size_t new_capacity) {
+        std::unique_ptr<key_t[]> keys_buf{keys_allocator.allocate(new_capacity)};
+        std::unique_ptr<value_t[]> values_buf{values_allocator.allocate(new_capacity)};
+        std::vector<skip_t> new_skip_fields(new_capacity / skip_bits, 0);
+
+        std::size_t offset{new_capacity / 4};
+
+        std::memmove(keys_buf.get() + offset, keys, capacity_ * sizeof(key_t));
+        std::memmove(values_buf.get() + offset, values, capacity_ * sizeof(value_t));
+        std::memmove(new_skip_fields.data() + offset / skip_bits, used_fields.data(), used_fields.size() * sizeof(skip_t));
+
+        keys_allocator.deallocate(keys, capacity_);
+        values_allocator.deallocate(values, capacity_);
+
+        keys = keys_buf.release();
+        capacity_ = new_capacity;
+        fill_gap(0, offset, keys[offset]);
+        fill_gap(3 * offset, capacity_, keys[3 * offset - 1]);
+        values = values_buf.release();
+        used_fields = std::move(new_skip_fields);
+        return offset;
+    }
+
     std::size_t lower_bound_slot(const key_t& key) const {
         if (size_ == 0) {
-            return capacity_;
+            return capacity_ / 2;
         }
         std::size_t low{0};
         std::size_t high{capacity_};
@@ -362,15 +446,14 @@ private:
         return get_prev(idx, [](std::size_t field) { return ~field; });
     }
 
-    key_t *keys;
-    value_t *values;
-    std::vector<skip_t> used_fields;
+    key_t *keys{nullptr};
+    value_t *values{nullptr};
+    std::vector<skip_t> used_fields{};
     std::size_t size_{0};
     std::size_t capacity_{0};
-    std::size_t beg{npos};
-    [[no_unique_address]] Compare compare;
-    std::allocator<key_t> keys_allocator;
-    std::allocator<value_t> values_allocator;
+    [[no_unique_address]] Compare compare{};
+    std::allocator<key_t> keys_allocator{};
+    std::allocator<value_t> values_allocator{};
 };
 
 

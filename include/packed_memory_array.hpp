@@ -26,8 +26,8 @@ public:
     class basic_iterator {
         using container = std::conditional_t<Const, const packed_memory_array, packed_memory_array>;
         friend class packed_memory_array;
-        std::size_t idx;
         container* cont;
+        std::size_t idx;
     public:
         friend class packed_memory_array;
 
@@ -84,24 +84,24 @@ public:
     packed_memory_array& operator=(const packed_memory_array &) = delete;
 
     packed_memory_array(packed_memory_array&& other) noexcept {
-        other.keys = std::exchange(keys, nullptr);
-        other.values = std::exchange(values, nullptr);
-        other.capacity_ = std::exchange(capacity_, 0);
-        other.size_ = std::exchange(size_, 0);
-        other.used_fields = std::move(used_fields);
-        other.keys_allocator = std::move(keys_allocator);
-        other.values_allocator = std::move(values_allocator);
+        keys = std::exchange(other.keys, nullptr);
+        values = std::exchange(other.values, nullptr);
+        capacity_ = std::exchange(other.capacity_, 0);
+        size_ = std::exchange(other.size_, 0);
+        used_fields = std::move(other.used_fields);
+        keys_allocator = std::move(other.keys_allocator);
+        values_allocator = std::move(other.values_allocator);
     }
 
     packed_memory_array& operator=(packed_memory_array&& other) noexcept {
         deallocate();
-        other.keys = std::exchange(keys, nullptr);
-        other.values = std::exchange(values, nullptr);
-        other.capacity_ = std::exchange(capacity_, 0);
-        other.size_ = std::exchange(size_, 0);
-        other.used_fields = std::move(used_fields);
-        other.keys_allocator = std::move(keys_allocator);
-        other.values_allocator = std::move(values_allocator);
+        keys = std::exchange(other.keys, nullptr);
+        values = std::exchange(other.values, nullptr);
+        capacity_ = std::exchange(other.capacity_, 0);
+        size_ = std::exchange(other.size_, 0);
+        used_fields = std::move(other.used_fields);
+        keys_allocator = std::move(other.keys_allocator);
+        values_allocator = std::move(other.values_allocator);
         return *this;
     }
 
@@ -110,7 +110,7 @@ public:
     }
 
     iterator begin() {
-        return iterator{this, test_bit(0)? 0 : get_next_live(0)};
+        return iterator{this, get_first_live()};
     }
 
     iterator end() {
@@ -118,7 +118,7 @@ public:
     }
 
     const_iterator begin() const {
-        return const_iterator{this, test_bit(0)? 0 : get_next_live(0)};
+        return const_iterator{this, get_first_live()};
     }
 
     const_iterator end() const {
@@ -126,7 +126,7 @@ public:
     }
 
     const_iterator cbegin() const {
-        return const_iterator{this, test_bit(0)? 0 : get_next_live(0)};
+        return const_iterator{this, get_first_live()};
     }
 
     const_iterator cend() const {
@@ -149,6 +149,22 @@ public:
         return end();
     }
 
+    const_iterator find(const key_t &key) const {
+        std::size_t idx = lower_bound_slot(key);
+        if (idx >= capacity_) {
+            return end();
+        }
+
+        if (!test_bit(idx)) {
+            idx = get_next_live(idx);
+        }
+
+        if (idx != npos && keys[idx] == key) {
+            return const_iterator{this, idx};
+        }
+        return end();
+    }
+
     iterator lower_bound(const key_t &key) {
         std::size_t idx = lower_bound_slot(key);
         if (idx >= capacity_) {
@@ -158,6 +174,11 @@ public:
             idx = get_next_live(idx);
         }
         return iterator{this, idx};
+    }
+    
+    template<typename Val>
+    std::pair<iterator, bool> try_emplace(key_t key, Val && value) {
+        return insert(key, std::forward<Val>(value));
     }
 
     template<typename Val>
@@ -258,7 +279,7 @@ private:
     std::size_t rightmost_live() const {
         for (auto [idx, word]: used_fields | std::views::enumerate | std::views::reverse) {
             if (word != 0) {
-                return idx * skip_bits + (skip_bits - 1 - static_cast<std::size_t>(std::countl_zero(word)));
+                return static_cast<std::size_t>(idx) * skip_bits + (skip_bits - 1 - static_cast<std::size_t>(std::countl_zero(word)));
             }
         }
         return npos;
@@ -273,21 +294,41 @@ private:
         return rightmost_live() + 1;
     }
 
+    void move_value(value_t* dst, std::size_t src) {
+        std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, dst, std::move(values[src]));
+        std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[src]);
+    }
+
     void shift_right(std::size_t start, std::size_t count) {
         std::memmove(&keys[start] + 1, &keys[start], count * sizeof(key_t));
-        std::memmove(&values[start] + 1, &values[start], count * sizeof(value_t));
+        if constexpr (std::is_trivially_move_constructible_v<value_t>) {
+            std::memmove(&values[start] + 1, &values[start], count * sizeof(value_t));
+        } else {
+            for (std::size_t i = start + count; i > start; --i) {
+                move_value(values + i, i - 1);
+            }
+        }
         set_occupied(start + count);
         set_unoccupied(start);
     }
 
     void shift_left(std::size_t start, std::size_t count) {
         std::memmove(&keys[start - count], &keys[start - count + 1], count * sizeof(key_t));
-        std::memmove(&values[start - count], &values[start - count + 1], count * sizeof(value_t));
+        if constexpr (std::is_trivially_move_constructible_v<value_t>) {
+            std::memmove(&values[start - count], &values[start - count + 1], count * sizeof(value_t));
+        } else {
+            for (std::size_t i = start - count; i < start; ++i) {
+                move_value(values + i, i + 1);
+            }
+        }
         set_occupied(start - count);
         set_unoccupied(start);
     }
 
     void deallocate() {
+        if (capacity_ == 0) {
+            return;
+        }
         for (std::size_t idx = test_bit(0) ? 0 : get_next_live(0); idx != npos; idx = get_next_live(idx)) {
             std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
         }
@@ -296,14 +337,27 @@ private:
     }
 
     std::size_t allocate(std::size_t new_capacity) {
-        std::unique_ptr<key_t[]> keys_buf{keys_allocator.allocate(new_capacity)};
-        std::unique_ptr<value_t[]> values_buf{values_allocator.allocate(new_capacity)};
+        auto key_deleter = [&](key_t* ptr) {
+            keys_allocator.deallocate(ptr, new_capacity);
+        };
+        auto value_deleter = [&](value_t* ptr) {
+            values_allocator.deallocate(ptr, new_capacity);
+        };
+        std::unique_ptr<key_t[], decltype(key_deleter)> keys_buf{keys_allocator.allocate(new_capacity), key_deleter};
+        std::unique_ptr<value_t[], decltype(value_deleter)> values_buf{values_allocator.allocate(new_capacity), value_deleter};
+
         std::vector<skip_t> new_skip_fields(new_capacity / skip_bits, 0);
 
         std::size_t offset{new_capacity / 4};
 
         std::memmove(keys_buf.get() + offset, keys, capacity_ * sizeof(key_t));
-        std::memmove(values_buf.get() + offset, values, capacity_ * sizeof(value_t));
+        if constexpr (std::is_trivially_move_constructible_v<value_t>) {
+            std::memmove(values_buf.get() + offset, values, capacity_ * sizeof(value_t));
+        } else {
+            for (std::size_t i = capacity_ > 0 ? get_first_live() : npos; i != npos; i = get_next_live(i)) {
+                move_value(values_buf.get() + i + offset, i);
+            }
+        }
         std::memmove(new_skip_fields.data() + offset / skip_bits, used_fields.data(), used_fields.size() * sizeof(skip_t));
 
         keys_allocator.deallocate(keys, capacity_);
@@ -386,7 +440,7 @@ private:
         std::size_t skip_vec_idx{idx/skip_bits};
         std::size_t bit = idx % skip_bits;
 
-        std::size_t mask = (bit == skip_bits -1) ? std::size_t{0} : std::numeric_limits<std::size_t>::max() << bit + 1;
+        std::size_t mask = (bit == skip_bits -1) ? std::size_t{0} : std::numeric_limits<std::size_t>::max() << (bit + 1);
         std::size_t current_word = operation_on_bit_field(used_fields[skip_vec_idx]) & mask;
 
         if (current_word != 0) {
@@ -395,7 +449,7 @@ private:
 
         for (std::size_t i = skip_vec_idx + 1; i < used_fields.size(); ++i) {
             if (operation_on_bit_field(used_fields[i]) != 0) {
-                return (i * skip_bits) + std::countr_zero(operation_on_bit_field(used_fields[i]));
+                return (i * skip_bits) + static_cast<std::size_t>(std::countr_zero(operation_on_bit_field(used_fields[i])));
             }
         }
         return npos;
@@ -403,6 +457,10 @@ private:
 
     std::size_t get_next_live(std::size_t idx) const {
         return get_next(idx, std::identity{});
+    }
+
+    std::size_t get_first_live() const {
+        return test_bit(0) ? 0 : get_next_live(0);
     }
 
     std::size_t get_next_gap(std::size_t idx) const {

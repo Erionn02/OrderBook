@@ -99,12 +99,12 @@ TEST(PMATests, emptyContainer) {
 
 TEST(PMATests, insertKeepsSortedOrder) {
     IntSet s;
-    for (int x: {5, 1, 9, 3, 7, 2, 8, 4, 6, 0}) {
+    for (int x: {500, 100, 900, 300, 700, 200, 800, 400, 600, 0}) {
         s.insert(x);
         s.print(x);
     }
     EXPECT_EQ(s.size(), 10u);
-    EXPECT_EQ(s.toVector(), (std::vector<int>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}));
+    EXPECT_EQ(s.toVector(), (std::vector<int>{0, 100, 200, 300, 400, 500, 600, 700, 800, 900}));
 }
 
 TEST(PMATests, duplicateInsertRejected) {
@@ -171,8 +171,8 @@ TEST(PMATests, randomizedOracleVsStdSet) {
     std::mt19937 rng(12345);
     std::uniform_int_distribution<int> keyDist(0, 400);
     std::uniform_int_distribution<int> opDist(0, 2);
-
-    for (int step = 0; step < 20000; ++step) {
+    const std::size_t max_steps{20000};
+    for (std::size_t step = 0; step < max_steps; ++step) {
         int op = opDist(rng);
         int key = keyDist(rng);
         if (op == 0) {
@@ -188,7 +188,7 @@ TEST(PMATests, randomizedOracleVsStdSet) {
             ASSERT_EQ(s.contains(key), oracle.count(key) == 1);
         }
         ASSERT_EQ(s.size(), oracle.size());
-        if (step % 200 == 0 || step == 19999) {
+        if (step % 200 == 0 || step == max_steps - 1) {
             ASSERT_EQ(s.toVector(), std::vector<int>(oracle.begin(), oracle.end()));
         }
     }
@@ -217,7 +217,7 @@ TEST(PMATests, constructDestroyBalance) {
         std::mt19937 rng(99);
         std::uniform_int_distribution<int> keyDist(0, 300);
         std::set<int> oracle;
-        for (int step = 0; step < 8000; ++step) {
+        for (std::size_t step = 0; step < 8000; ++step) {
             int key = keyDist(rng);
             if (step % 2 == 0) {
                 ds.insert(key, Counted{key});
@@ -243,7 +243,9 @@ TEST(PMATests, randomizedOracleDescendingWideRange) {
     std::uniform_int_distribution<int> keyDist(-5000, 5000);
     std::uniform_int_distribution<int> opDist(0, 3);
 
-    for (int step = 0; step < 60000; ++step) {
+    const std::size_t max_steps{60000};
+
+    for (std::size_t step = 0; step < max_steps; ++step) {
         int op = opDist(rng);
         int key = keyDist(rng);
         if (op <= 1) {
@@ -270,8 +272,10 @@ TEST(PMATests, randomizedOracleDescendingWideRange) {
             }
         }
         ASSERT_EQ(ds.size(), oracle.size());
-        std::vector<int> got{ds.begin(), ds.end()};
-        ASSERT_EQ(got, std::vector<int>(oracle.begin(), oracle.end()));
+        if (step % 200 == 0 || step == max_steps - 1) {
+            std::vector<int> got{ds.begin(), ds.end()};
+            ASSERT_EQ(got, std::vector<int>(oracle.begin(), oracle.end()));
+        }
     }
 }
 

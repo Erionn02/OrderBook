@@ -176,9 +176,28 @@ public:
         return iterator{this, idx};
     }
     
-    template<typename Val>
-    std::pair<iterator, bool> try_emplace(key_t key, Val && value) {
-        return insert(key, std::forward<Val>(value));
+    template<typename Callable> requires(std::is_same_v<value_t, decltype(std::declval<Callable>()())>)
+    std::pair<iterator, bool> get_or_insert(key_t key, Callable && callable) {
+        if (size_ == 0) {
+            return insert_at(key, callable(), capacity_ / 2);
+        }
+
+        std::size_t idx = lower_bound_slot(key);
+
+        if (idx == capacity_) {
+            return insert_at(key, callable(), append_slot());
+        }
+
+        if (keys[idx] == key) {
+            std::size_t live_idx = test_bit(idx) ? idx : get_next_live(idx);
+            return {iterator{this, live_idx}, false};
+        }
+
+        if (!test_bit(idx)) {
+            return insert_at(key, callable(), idx);
+        }
+
+        return insert_at(key, callable(), make_room_at(idx));
     }
 
     template<typename Val>
@@ -216,7 +235,9 @@ public:
         std::size_t idx = it.idx;
         --size_;
         set_unoccupied(idx);
-        std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
+        if constexpr (!std::is_trivially_destructible_v<value_t>) {
+            std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
+        }
 
         std::size_t next_live = get_next_live(idx);
         std::size_t prev_live = get_prev_live(idx);
@@ -329,8 +350,10 @@ private:
         if (capacity_ == 0) {
             return;
         }
-        for (std::size_t idx = test_bit(0) ? 0 : get_next_live(0); idx != npos; idx = get_next_live(idx)) {
-            std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
+        if constexpr (!std::is_trivially_destructible_v<value_t>) {
+            for (std::size_t idx = test_bit(0) ? 0 : get_next_live(0); idx != npos; idx = get_next_live(idx)) {
+                std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
+            }
         }
         keys_allocator.deallocate(keys, capacity_);
         values_allocator.deallocate(values, capacity_);

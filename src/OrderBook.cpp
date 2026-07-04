@@ -16,21 +16,35 @@ void OrderBook::cancelOrder(OrderId orderId) {
     cancelOrderInternal(it);
 }
 
+PriceLevel* OrderBook::allocatePriceLevel(Price price) {
+    if (!price_level_cache.empty()) {
+        auto last = price_level_cache.back();
+        price_level_cache.pop_back();
+        last->price = price;
+        return last;
+    }
+    auto level = &price_level_source.emplace_back();
+    level->price = price;
+    return level;
+}
+
 void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
     if (it != orders.end()) {
         auto orderIt = it->second;
         if (orderIt->getSide() == TradeSide::Buy) {
             auto level_it = bids.find(orderIt->getPrice());
-            PriceLevel &level = *level_it;
+            PriceLevel &level = **level_it;
             level.orders.erase(orderIt);
             if (level.orders.empty()) {
+                price_level_cache.push_back(*level_it);
                 bids.erase(level_it);
             }
         } else {
             auto level_it = asks.find(orderIt->getPrice());
-            PriceLevel &level = *level_it;
+            PriceLevel &level = **level_it;
             level.orders.erase(orderIt);
             if (level.orders.empty()) {
+                price_level_cache.push_back(*level_it);
                 asks.erase(level_it);
             }
         }

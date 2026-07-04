@@ -59,6 +59,9 @@ function(set_link_options TARGET_NAME)
             -freflection
             -march=native
     )
+    if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        target_compile_options(${TARGET_NAME} PRIVATE -fno-inline)
+    endif()
 endfunction()
 
 macro(add_conan_lib LIB)

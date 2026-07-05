@@ -282,11 +282,12 @@ private:
         if (std::size_t left = get_prev_gap(idx); left != npos) {
             // we know that idx points to an element greater than we want to insert, so we want to see if we can
             // move left part of the array so we could insert before that that key
-            std::size_t prev_idx = idx - 1;
-            std::size_t to_move_count = prev_idx - left;
+            std::size_t first_live_after_gap = left + 1;
 
-            std::size_t start = prev_idx - to_move_count;
-            shift_left(start, to_move_count);
+            std::size_t prev_idx = idx - 1;
+            std::size_t to_move_count = idx - first_live_after_gap;
+
+            shift_left(first_live_after_gap, to_move_count);
             return prev_idx;
         }
 
@@ -294,12 +295,11 @@ private:
         if (idx < capacity_ / 2) {
             std::size_t offset = allocate(capacity_ * scaling_factor);
             idx += offset;
-            std::size_t gap_location = offset - 1;
 
             std::size_t prev_idx = idx - 1;
-            std::size_t to_move_count = prev_idx - gap_location;
-            std::size_t start = prev_idx - to_move_count;
-            shift_left(start, to_move_count);
+            std::size_t to_move_count = idx - offset;
+
+            shift_left(offset, to_move_count);
             return prev_idx;
         }
         std::size_t offset = allocate(capacity_ * scaling_factor);
@@ -360,31 +360,31 @@ private:
     }
 
     void shift_left(std::size_t start, std::size_t count) {
-        std::memmove(&keys[start], &keys[start + 1], count * sizeof(key_t));
+        std::memmove(&keys[start - 1], &keys[start], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
                 for (std::size_t idx = start; idx < start + count; ++idx) {
-                    std::size_t next = idx + 1;
-                    if (test_bit(next)) {
-                        hook(values[next], idx);
+                    if (test_bit(idx)) {
+                        std::size_t prev = idx - 1;
+                        hook(values[idx], prev);
                     }
                 }
             }
-            std::memmove(&values[start], &values[start + 1], count * sizeof(value_t));
+            std::memmove(&values[start - 1], &values[start], count * sizeof(value_t));
         } else {
             for (std::size_t idx = start; idx < start + count; ++idx) {
-                std::size_t next = idx + 1;
+                std::size_t prev = idx - 1;
                 if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
-                    if (test_bit(next)) {
-                        hook(values[next], idx);
+                    if (test_bit(idx)) {
+                        hook(values[idx], prev);
                     }
                 }
-                move_value(values + idx, next);
+                move_value(values + prev, idx);
             }
         }
 
-        set_occupied(start);
-        set_unoccupied(start + count);
+        set_occupied(start - 1);
+        set_unoccupied(start + count - 1);
     }
 
     void deallocate() {

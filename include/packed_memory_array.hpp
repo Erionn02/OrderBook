@@ -347,12 +347,10 @@ private:
         } else {
             for (std::size_t idx = start + count; idx > start; --idx) {
                 std::size_t prev = idx - 1;
-                if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
-                    if (test_bit(prev)) {
-                        hook(values[prev], idx);
-                    }
+                if (test_bit(prev)) {
+                    hook(values[prev], idx);
+                    move_value(values + idx, prev);
                 }
-                move_value(values + idx, prev);
             }
         }
         set_occupied(start + count);
@@ -374,12 +372,10 @@ private:
         } else {
             for (std::size_t idx = start; idx < start + count; ++idx) {
                 std::size_t prev = idx - 1;
-                if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
-                    if (test_bit(idx)) {
-                        hook(values[idx], prev);
-                    }
+                if (test_bit(idx)) {
+                    hook(values[idx], prev);
+                    move_value(values + prev, idx);
                 }
-                move_value(values + prev, idx);
             }
         }
 
@@ -427,6 +423,7 @@ private:
         } else {
             for (std::size_t i = capacity_ > 0 ? get_first_live() : npos; i != npos; i = get_next_live(i)) {
                 move_value(values_buf.get() + i + offset, i);
+                hook(values_buf.get() + i + offset, i + offset);
             }
         }
         std::memmove(new_skip_fields.data() + offset / skip_bits, used_fields.data(), used_fields.size() * sizeof(skip_t));

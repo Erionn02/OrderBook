@@ -10,7 +10,8 @@
 
 struct NoOp {
     template<typename T>
-    void operator()(T&&, std::size_t) const noexcept {}
+    void operator()(T&&, std::size_t) const noexcept {
+    }
 };
 
 template<typename Key_, typename Value_, typename Compare = std::less<>, typename OnChangePosHook = NoOp>
@@ -33,6 +34,7 @@ public:
         friend class packed_memory_array;
         container* cont;
         std::size_t idx;
+
     public:
         friend class packed_memory_array;
 
@@ -42,7 +44,8 @@ public:
         using pointer = std::conditional_t<Const, const value_t*, value_t*>;
         using difference_type = std::ptrdiff_t;
 
-        basic_iterator(container* cont, std::size_t idx) : cont(cont), idx(idx) {}
+        basic_iterator(container* cont, std::size_t idx) : cont(cont), idx(idx) {
+        }
 
         reference operator*() const {
             return cont->values[idx];
@@ -52,7 +55,7 @@ public:
             return &cont->values[idx];
         }
 
-        basic_iterator &operator++() {
+        basic_iterator& operator++() {
             idx = cont->get_next_live(idx);
             return *this;
         }
@@ -63,11 +66,11 @@ public:
             return cp;
         }
 
-        bool operator==(const basic_iterator &b) const{
+        bool operator==(const basic_iterator& b) const {
             return idx == b.idx;
         }
 
-        bool operator!=(const basic_iterator &b) const {
+        bool operator!=(const basic_iterator& b) const {
             return idx != b.idx;
         }
     };
@@ -85,8 +88,9 @@ public:
         fill_gap(0, capacity_, key_t{});
     }
 
-    packed_memory_array(const packed_memory_array &) = delete;
-    packed_memory_array& operator=(const packed_memory_array &) = delete;
+    packed_memory_array(const packed_memory_array&) = delete;
+
+    packed_memory_array& operator=(const packed_memory_array&) = delete;
 
     packed_memory_array(packed_memory_array&& other) noexcept {
         keys = std::exchange(other.keys, nullptr);
@@ -138,7 +142,7 @@ public:
         return const_iterator{this, npos};
     }
 
-    iterator find(const key_t &key) {
+    iterator find(const key_t& key) {
         std::size_t idx = lower_bound_slot(key);
         if (idx >= capacity_) {
             return end();
@@ -154,7 +158,7 @@ public:
         return end();
     }
 
-    const_iterator find(const key_t &key) const {
+    const_iterator find(const key_t& key) const {
         std::size_t idx = lower_bound_slot(key);
         if (idx >= capacity_) {
             return end();
@@ -170,7 +174,7 @@ public:
         return end();
     }
 
-    iterator lower_bound(const key_t &key) {
+    iterator lower_bound(const key_t& key) {
         std::size_t idx = lower_bound_slot(key);
         if (idx >= capacity_) {
             return end();
@@ -182,7 +186,7 @@ public:
     }
 
     template<typename Callable> requires(std::is_same_v<value_t, decltype(std::declval<Callable>()())>)
-    std::pair<iterator, bool> get_or_insert(key_t key, Callable && callable) {
+    std::pair<iterator, bool> get_or_insert(key_t key, Callable&& callable) {
         if (size_ == 0) {
             return insert_at(key, callable(), capacity_ / 2);
         }
@@ -206,7 +210,7 @@ public:
     }
 
     template<typename Val>
-    std::pair<iterator, bool> insert(key_t key, Val && value) {
+    std::pair<iterator, bool> insert(key_t key, Val&& value) {
         if (size_ == 0) {
             return insert_at(key, std::forward<Val>(value), capacity_ / 2);
         }
@@ -229,7 +233,7 @@ public:
         return insert_at(key, std::forward<Val>(value), make_room_at(idx));
     }
 
-    iterator erase(const key_t &key) {
+    iterator erase(const key_t& key) {
         return erase(find(key));
     }
 
@@ -280,7 +284,9 @@ private:
             // move left part of the array so we could insert before that that key
             std::size_t prev_idx = idx - 1;
             std::size_t to_move_count = prev_idx - left;
-            shift_left(prev_idx, to_move_count);
+
+            std::size_t start = prev_idx - to_move_count;
+            shift_left(start, to_move_count);
             return prev_idx;
         }
 
@@ -288,17 +294,18 @@ private:
         if (idx < capacity_ / 2) {
             std::size_t offset = allocate(capacity_ * scaling_factor);
             idx += offset;
-            std::size_t left = offset - 1;
-            std::size_t prev_idx = idx - 1;
-            std::size_t to_move_count = prev_idx - left;
+            std::size_t gap_location = offset - 1;
 
-            shift_left(prev_idx, to_move_count);
+            std::size_t prev_idx = idx - 1;
+            std::size_t to_move_count = prev_idx - gap_location;
+            std::size_t start = prev_idx - to_move_count;
+            shift_left(start, to_move_count);
             return prev_idx;
         }
         std::size_t offset = allocate(capacity_ * scaling_factor);
         idx += offset;
         std::size_t next_gap_location = 3 * offset;
-        shift_right(idx,  next_gap_location - idx);
+        shift_right(idx, next_gap_location - idx);
         return idx;
     }
 
@@ -329,21 +336,23 @@ private:
         std::memmove(&keys[start] + 1, &keys[start], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
-                for (std::size_t i = 0; i < count; ++i) {
-                    if (test_bit(start + i)) {
-                        hook(values[start + i], start + i + 1);
+                for (std::size_t idx = start; idx < start + count; ++idx) {
+                    if (test_bit(idx)) {
+                        std::size_t next = idx + 1;
+                        hook(values[idx], next);
                     }
                 }
             }
             std::memmove(&values[start] + 1, &values[start], count * sizeof(value_t));
         } else {
-            for (std::size_t i = start + count; i > start; --i) {
+            for (std::size_t idx = start + count; idx > start; --idx) {
+                std::size_t prev = idx - 1;
                 if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
-                    if (test_bit(i-1)) {
-                        hook(values[i-1], i);
+                    if (test_bit(prev)) {
+                        hook(values[prev], idx);
                     }
                 }
-                move_value(values + i, i - 1);
+                move_value(values + idx, prev);
             }
         }
         set_occupied(start + count);
@@ -351,28 +360,31 @@ private:
     }
 
     void shift_left(std::size_t start, std::size_t count) {
-        std::memmove(&keys[start - count], &keys[start - count + 1], count * sizeof(key_t));
+        std::memmove(&keys[start], &keys[start + 1], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
-                for (std::size_t i = start - count; i < start; ++i) {
-                    if (test_bit(i+1)) {
-                        hook(values[i+1], i);
+                for (std::size_t idx = start; idx < start + count; ++idx) {
+                    std::size_t next = idx + 1;
+                    if (test_bit(next)) {
+                        hook(values[next], idx);
                     }
                 }
             }
-            std::memmove(&values[start - count], &values[start - count + 1], count * sizeof(value_t));
+            std::memmove(&values[start], &values[start + 1], count * sizeof(value_t));
         } else {
-            for (std::size_t i = start - count; i < start; ++i) {
+            for (std::size_t idx = start; idx < start + count; ++idx) {
+                std::size_t next = idx + 1;
                 if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
-                    if (test_bit(i + 1)) {
-                        hook(values[i+1], i);
+                    if (test_bit(next)) {
+                        hook(values[next], idx);
                     }
                 }
-                move_value(values + i, i + 1);
+                move_value(values + idx, next);
             }
         }
-        set_occupied(start - count);
-        set_unoccupied(start);
+
+        set_occupied(start);
+        set_unoccupied(start + count);
     }
 
     void deallocate() {
@@ -449,12 +461,12 @@ private:
     }
 
     template<typename Val>
-    std::pair<iterator, bool> insert_at(key_t key, Val && value, std::size_t idx) {
+    std::pair<iterator, bool> insert_at(key_t key, Val&& value, std::size_t idx) {
         keys[idx] = key;
         std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
         set_occupied(idx);
         std::size_t start = get_prev_live(idx) + 1;
-        std::size_t end {idx};
+        std::size_t end{idx};
         std::size_t next = idx + 1;
         if (next < capacity_ && compare(keys[next], key)) {
             end = get_next_live(idx);
@@ -475,19 +487,19 @@ private:
     }
 
     void flip_bit(std::size_t idx) {
-        used_fields[idx/skip_bits] ^= (skip_t{1} << (idx % skip_bits));
+        used_fields[idx / skip_bits] ^= (skip_t{1} << (idx % skip_bits));
     }
 
     bool test_bit(std::size_t idx) const {
-        return used_fields[idx/skip_bits] & (skip_t{1} << (idx % skip_bits));
+        return used_fields[idx / skip_bits] & (skip_t{1} << (idx % skip_bits));
     }
 
     void set_occupied(std::size_t idx) {
-        used_fields[idx/skip_bits] |=  skip_t{1} << (idx % skip_bits);
+        used_fields[idx / skip_bits] |= skip_t{1} << (idx % skip_bits);
     }
 
     void set_unoccupied(std::size_t idx) {
-        used_fields[idx/skip_bits] &= ~(skip_t{1} << (idx % skip_bits));
+        used_fields[idx / skip_bits] &= ~(skip_t{1} << (idx % skip_bits));
     }
 
     template<typename F>
@@ -496,10 +508,10 @@ private:
             return npos;
         }
 
-        std::size_t skip_vec_idx{idx/skip_bits};
+        std::size_t skip_vec_idx{idx / skip_bits};
         std::size_t bit = idx % skip_bits;
 
-        std::size_t mask = (bit == skip_bits -1) ? std::size_t{0} : std::numeric_limits<std::size_t>::max() << (bit + 1);
+        std::size_t mask = (bit == skip_bits - 1) ? std::size_t{0} : std::numeric_limits<std::size_t>::max() << (bit + 1);
         std::size_t current_word = operation_on_bit_field(used_fields[skip_vec_idx]) & mask;
 
         if (current_word != 0) {
@@ -535,10 +547,10 @@ private:
             idx = capacity_ - 1;
         }
 
-        std::size_t skip_vec_idx{idx/skip_bits};
+        std::size_t skip_vec_idx{idx / skip_bits};
         std::size_t bit = idx % skip_bits;
 
-        std::size_t mask = bit == 0 ? 0: std::numeric_limits<std::size_t>::max() >> (64 - bit);
+        std::size_t mask = bit == 0 ? 0 : std::numeric_limits<std::size_t>::max() >> (64 - bit);
         std::size_t current_word = operation_on_bit_field(used_fields[skip_vec_idx]) & mask;
         if (current_word != 0) {
             return skip_vec_idx * skip_bits + (skip_bits - 1 - static_cast<std::size_t>(std::countl_zero(current_word)));
@@ -563,8 +575,8 @@ private:
         return get_prev(idx, [](std::size_t field) { return ~field; });
     }
 
-    key_t *keys{nullptr};
-    value_t *values{nullptr};
+    key_t* keys{nullptr};
+    value_t* values{nullptr};
     std::vector<skip_t> used_fields{};
     std::size_t size_{0};
     std::size_t capacity_{0};
@@ -573,5 +585,3 @@ private:
     std::allocator<key_t> keys_allocator{};
     std::allocator<value_t> values_allocator{};
 };
-
-

@@ -30,22 +30,20 @@ PriceLevel* OrderBook::allocatePriceLevel(Price price) {
 
 void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
     if (it != orders.end()) {
-        auto orderIt = it->second;
+        auto [orderIt, level] = it->second;
         if (orderIt->getSide() == TradeSide::Buy) {
-            auto level_it = bids.find(orderIt->getPrice());
-            PriceLevel &level = **level_it;
-            level.orders.erase(orderIt);
-            if (level.orders.empty()) {
-                price_level_cache.push_back(*level_it);
-                bids.erase(level_it);
+            level->orders.erase(orderIt);
+            if (level->orders.empty()) {
+                price_level_cache.push_back(level);
+                using itType = std::remove_cvref_t<decltype(bids)>::iterator;
+                bids.erase(itType(&bids, level->idx));
             }
         } else {
-            auto level_it = asks.find(orderIt->getPrice());
-            PriceLevel &level = **level_it;
-            level.orders.erase(orderIt);
-            if (level.orders.empty()) {
-                price_level_cache.push_back(*level_it);
-                asks.erase(level_it);
+            level->orders.erase(orderIt);
+            if (level->orders.empty()) {
+                price_level_cache.push_back(level);
+                using itType = std::remove_cvref_t<decltype(asks)>::iterator;
+                asks.erase(itType(&asks, level->idx));
             }
         }
         orders.erase(it);
@@ -57,7 +55,7 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Pr
     if (it == orders.end()) {
         return {};
     }
-    Order newOrder{orderId, it->second->getType(), quantity, price, it->second->getSide()};
+    Order newOrder{orderId, it->second.first->getType(), quantity, price, it->second.first->getSide()};
     cancelOrderInternal(it);
 
     return addOrder(newOrder);
@@ -68,5 +66,5 @@ std::size_t OrderBook::getOrdersCount() const {
 }
 
 Order OrderBook::getOrder(OrderId orderId) const {
-    return *orders.at(orderId);
+    return *orders.at(orderId).first;
 }

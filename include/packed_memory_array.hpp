@@ -8,7 +8,12 @@
 
 // here I try to keep consistency with stl-like naming sice it's stl-like container, but for very specific use-case
 
-template<typename Key_, typename Value_, typename Compare = std::less<>>
+struct NoOp {
+    template<typename T>
+    void operator()(T&&, std::size_t) const noexcept {}
+};
+
+template<typename Key_, typename Value_, typename Compare = std::less<>, typename OnChangePosHook = NoOp>
 class packed_memory_array {
 public:
     using key_t = std::remove_cvref_t<Key_>;
@@ -175,7 +180,7 @@ public:
         }
         return iterator{this, idx};
     }
-    
+
     template<typename Callable> requires(std::is_same_v<value_t, decltype(std::declval<Callable>()())>)
     std::pair<iterator, bool> get_or_insert(key_t key, Callable && callable) {
         if (size_ == 0) {
@@ -264,7 +269,7 @@ public:
     }
 
 private:
-        std::size_t make_room_at(std::size_t idx) {
+    std::size_t make_room_at(std::size_t idx) {
         if (std::size_t right = get_next_gap(idx); right != npos) {
             std::size_t to_move_count = right - idx;
             shift_right(idx, to_move_count);
@@ -323,9 +328,21 @@ private:
     void shift_right(std::size_t start, std::size_t count) {
         std::memmove(&keys[start] + 1, &keys[start], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
+            if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
+                for (std::size_t i = 0; i < count; ++i) {
+                    if (test_bit(start + i)) {
+                        hook(values[start + i], start + i + 1);
+                    }
+                }
+            }
             std::memmove(&values[start] + 1, &values[start], count * sizeof(value_t));
         } else {
             for (std::size_t i = start + count; i > start; --i) {
+                if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
+                    if (test_bit(i-1)) {
+                        hook(values[i-1], i);
+                    }
+                }
                 move_value(values + i, i - 1);
             }
         }
@@ -336,9 +353,21 @@ private:
     void shift_left(std::size_t start, std::size_t count) {
         std::memmove(&keys[start - count], &keys[start - count + 1], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
+            if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
+                for (std::size_t i = start - count; i < start; ++i) {
+                    if (test_bit(i+1)) {
+                        hook(values[i+1], i);
+                    }
+                }
+            }
             std::memmove(&values[start - count], &values[start - count + 1], count * sizeof(value_t));
         } else {
             for (std::size_t i = start - count; i < start; ++i) {
+                if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
+                    if (test_bit(i + 1)) {
+                        hook(values[i+1], i);
+                    }
+                }
                 move_value(values + i, i + 1);
             }
         }
@@ -376,6 +405,13 @@ private:
         std::memmove(keys_buf.get() + offset, keys, capacity_ * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             std::memmove(values_buf.get() + offset, values, capacity_ * sizeof(value_t));
+            if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
+                if (capacity_ != 0) {
+                    for (auto first = cbegin(); first != cend(); ++first) {
+                        hook(*first, first.idx + offset);
+                    }
+                }
+            }
         } else {
             for (std::size_t i = capacity_ > 0 ? get_first_live() : npos; i != npos; i = get_next_live(i)) {
                 move_value(values_buf.get() + i + offset, i);
@@ -426,7 +462,7 @@ private:
                 end = capacity_;
             }
         }
-
+        hook(values[idx], idx);
         fill_gap(start, end, key);
         ++size_;
         return {iterator{this, idx}, true};
@@ -533,6 +569,7 @@ private:
     std::size_t size_{0};
     std::size_t capacity_{0};
     [[no_unique_address]] Compare compare{};
+    [[no_unique_address]] OnChangePosHook hook{};
     std::allocator<key_t> keys_allocator{};
     std::allocator<value_t> values_allocator{};
 };

@@ -29,7 +29,7 @@ public:
     const auto& getAsks() const { return asks; }
 private:
     PriceLevel* allocatePriceLevel(Price price);
-    using OrderHashMap = boost::unordered_flat_map<OrderId, decltype(PriceLevel::orders)::iterator>;
+    using OrderHashMap = boost::unordered_flat_map<OrderId, std::pair<decltype(PriceLevel::orders)::iterator, PriceLevel*>>;
 
     void cancelOrderInternal(OrderHashMap::iterator it);
 
@@ -75,7 +75,8 @@ private:
                 }
             }
             if (level.orders.empty()) {
-                price_level_cache.push_back(*it);
+                PriceLevel* lvl = *it;
+                price_level_cache.push_back(lvl);
                 it = order_map.erase(it);
             } else {
                 ++it;
@@ -88,7 +89,7 @@ private:
         if constexpr (order_type == OrderType::Limit) {
             auto [price_level_it, _] = to_insert_map.get_or_insert(order.getPrice(), [&]{return allocatePriceLevel(order.getPrice());});
             auto &levelOrders = (*price_level_it)->orders;
-            orders.emplace(order.getId(), levelOrders.insert(levelOrders.end(), order));
+            orders.emplace(order.getId(), std::pair{levelOrders.insert(levelOrders.end(), order), *price_level_it});
         }
         return trades;
     }
@@ -112,9 +113,15 @@ private:
 
     std::vector<PriceLevel*> price_level_cache{};
     std::deque<PriceLevel> price_level_source{};
-    
-    packed_memory_array<Price, PriceLevel*, std::greater<>> bids{};
-    packed_memory_array<Price, PriceLevel*, std::less<>> asks{};
+
+    struct UpdateIdxHook {
+        void operator()(PriceLevel* level, std::size_t idx) {
+            level->idx = idx;
+        }
+    };
+
+    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook> bids{};
+    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook> asks{};
 
     OrderHashMap orders{};
 };

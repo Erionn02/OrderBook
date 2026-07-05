@@ -10,4 +10,5 @@ using OrderListAllocator = boost::fast_pool_allocator<Order, boost::default_user
 struct PriceLevel {
     Price price;
     std::list<Order, OrderListAllocator> orders;
+    std::size_t idx{std::string::npos};
 };

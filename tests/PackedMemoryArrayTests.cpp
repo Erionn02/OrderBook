@@ -121,7 +121,9 @@ TEST(PMATests, duplicateInsertRejected) {
 
 TEST(PMATests, findAndLowerBound) {
     packed_memory_array<int, int> ds;
-    for (int x: {10, 20, 30, 40, 50}) ds.insert(x, x);
+    for (int x: {10, 20, 30, 40, 50}) {
+        ds.insert(x, x);
+    }
     EXPECT_EQ(*ds.find(30), 30);
     EXPECT_EQ(ds.find(35), ds.end());
     EXPECT_EQ(*ds.lower_bound(30), 30);
@@ -133,15 +135,18 @@ TEST(PMATests, findAndLowerBound) {
 TEST(PMATests, eraseIsO1AndIterationSkipsGaps) {
     IntSet s;
     for (int i = 0; i < 20; ++i) s.insert(i);
-    for (int i = 0; i < 20; i += 2)
+    for (int i = 0; i < 20; i += 2) {
         ASSERT_TRUE(s.erase(i));
+    }
     EXPECT_EQ(s.size(), 10u);
     EXPECT_EQ(s.toVector(), (std::vector<int>{1, 3, 5, 7, 9, 11, 13, 15, 17, 19}));
 }
 
 TEST(PMATests, eraseReturnsNextLive) {
     packed_memory_array<int, int> ds;
-    for (int x: {1, 2, 3, 4, 5}) ds.insert(x, x);
+    for (int x: {1, 2, 3, 4, 5}) {
+        ds.insert(x, x);
+    }
     auto next = ds.erase(ds.find(3));
     ASSERT_NE(next, ds.end());
     EXPECT_EQ(*next, 4);
@@ -150,23 +155,32 @@ TEST(PMATests, eraseReturnsNextLive) {
 TEST(PMATests, growsThroughManyInserts) {
     IntSet s;
     constexpr int N = 50000;
-    for (int i = N - 1; i >= 0; --i) s.insert(i);
+    for (int i = N - 1; i >= 0; --i) {
+        s.insert(i);
+    }
     EXPECT_EQ(s.size(), static_cast<std::size_t>(N));
     int expected = 0;
-    for (int v: s.ds)
+    for (int v: s.ds) {
         EXPECT_EQ(v, expected++);
+    }
     EXPECT_EQ(expected, N);
 }
 
 TEST(PMATests, reverseAndMiddleInsertStress) {
     IntSet s;
-    for (int i = 0; i < 2000; i += 2) s.insert(i);
-    for (int i = 1; i < 2000; i += 2) s.insert(i);
+    for (int i = 0; i < 2000; i += 2) {
+        s.insert(i);
+    }
+    for (int i = 1; i < 2000; i += 2) {
+        s.insert(i);
+    }
     ASSERT_EQ(s.size(), 2000u);
     int expected = 0;
-    for (int v: s.ds)
+    for (int v: s.ds) {
         ASSERT_EQ(v, expected++);
+    }
 }
+
 
 TEST(PMATests, randomizedOracleVsStdSet) {
     IntSet s;

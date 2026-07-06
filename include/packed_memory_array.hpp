@@ -97,6 +97,7 @@ public:
         values = std::exchange(other.values, nullptr);
         capacity_ = std::exchange(other.capacity_, 0);
         size_ = std::exchange(other.size_, 0);
+        beg = std::exchange(other.beg, npos);
         used_fields = std::move(other.used_fields);
         keys_allocator = std::move(other.keys_allocator);
         values_allocator = std::move(other.values_allocator);
@@ -108,6 +109,7 @@ public:
         values = std::exchange(other.values, nullptr);
         capacity_ = std::exchange(other.capacity_, 0);
         size_ = std::exchange(other.size_, 0);
+        beg = std::exchange(other.beg, npos);
         used_fields = std::move(other.used_fields);
         keys_allocator = std::move(other.keys_allocator);
         values_allocator = std::move(other.values_allocator);
@@ -119,7 +121,7 @@ public:
     }
 
     iterator begin() {
-        return iterator{this, get_first_live()};
+        return iterator{this, beg};
     }
 
     iterator end() {
@@ -127,7 +129,7 @@ public:
     }
 
     const_iterator begin() const {
-        return const_iterator{this, get_first_live()};
+        return const_iterator{this, beg};
     }
 
     const_iterator end() const {
@@ -135,7 +137,7 @@ public:
     }
 
     const_iterator cbegin() const {
-        return const_iterator{this, get_first_live()};
+        return const_iterator{this, beg};
     }
 
     const_iterator cend() const {
@@ -249,6 +251,9 @@ public:
         }
 
         std::size_t next_live = get_next_live(idx);
+        if (idx == beg) {
+            beg = next_live;
+        }
         std::size_t prev_live = get_prev_live(idx);
         std::size_t start = prev_live + 1;
         if (next_live != npos) {
@@ -333,6 +338,9 @@ private:
     }
 
     void shift_right(std::size_t start, std::size_t count) {
+        if (start <= beg) {
+            ++beg;
+        }
         std::memmove(&keys[start] + 1, &keys[start], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
@@ -358,6 +366,9 @@ private:
     }
 
     void shift_left(std::size_t start, std::size_t count) {
+        if (start <= beg) {
+            --beg;
+        }
         std::memmove(&keys[start - 1], &keys[start], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
@@ -427,7 +438,9 @@ private:
             }
         }
         std::memmove(new_skip_fields.data() + offset / skip_bits, used_fields.data(), used_fields.size() * sizeof(skip_t));
-
+        if (beg != npos) {
+            beg += offset;
+        }
         keys_allocator.deallocate(keys, capacity_);
         values_allocator.deallocate(values, capacity_);
 
@@ -441,9 +454,6 @@ private:
     }
 
     std::size_t lower_bound_slot(const key_t& key) const {
-        if (size_ == 0) {
-            return capacity_ / 2;
-        }
         std::size_t low{0};
         std::size_t high{capacity_};
         while (low < high) {
@@ -462,6 +472,7 @@ private:
         keys[idx] = key;
         std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
         set_occupied(idx);
+        beg = std::min(idx,beg);
         std::size_t start = get_prev_live(idx) + 1;
         std::size_t end{idx};
         std::size_t next = idx + 1;
@@ -577,6 +588,7 @@ private:
     std::vector<skip_t> used_fields{};
     std::size_t size_{0};
     std::size_t capacity_{0};
+    std::size_t beg{npos};
     [[no_unique_address]] Compare compare{};
     [[no_unique_address]] OnChangePosHook hook{};
     std::allocator<key_t> keys_allocator{};

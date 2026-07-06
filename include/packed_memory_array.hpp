@@ -28,6 +28,15 @@ public:
     using difference_type = std::ptrdiff_t;
     using size_type = std::size_t;
 
+    static constexpr std::size_t skip_bits{sizeof(skip_t) * 8};
+    static constexpr std::size_t npos{static_cast<std::size_t>(-1)};
+    static constexpr std::size_t scaling_factor{2};
+    static constexpr std::size_t alloc_min_chunk{128};
+    static constexpr double density_upper_leaf{0.84};
+    static constexpr double density_upper_root{0.5};
+    static constexpr std::size_t leaf_max_count{static_cast<std::size_t>(density_upper_leaf * skip_bits)};
+    static constexpr std::size_t rebalance_period{100};
+
     template<bool Const>
     class basic_iterator {
         using container = std::conditional_t<Const, const packed_memory_array, packed_memory_array>;
@@ -78,11 +87,6 @@ public:
     using iterator = basic_iterator<false>;
     using const_iterator = basic_iterator<true>;
 
-    static constexpr std::size_t skip_bits{sizeof(skip_t) * 8};
-    static constexpr std::size_t npos{static_cast<std::size_t>(-1)};
-    static constexpr std::size_t scaling_factor{2};
-    static constexpr std::size_t alloc_min_chunk{128};
-
     packed_memory_array() {
         allocate(alloc_min_chunk);
         fill_gap(0, capacity_, key_t{});
@@ -98,6 +102,7 @@ public:
         capacity_ = std::exchange(other.capacity_, 0);
         size_ = std::exchange(other.size_, 0);
         beg = std::exchange(other.beg, npos);
+        rebalance_countdown = std::exchange(other.rebalance_countdown, rebalance_period);
         used_fields = std::move(other.used_fields);
         keys_allocator = std::move(other.keys_allocator);
         values_allocator = std::move(other.values_allocator);
@@ -110,6 +115,7 @@ public:
         capacity_ = std::exchange(other.capacity_, 0);
         size_ = std::exchange(other.size_, 0);
         beg = std::exchange(other.beg, npos);
+        rebalance_countdown = std::exchange(other.rebalance_countdown, rebalance_period);
         used_fields = std::move(other.used_fields);
         keys_allocator = std::move(other.keys_allocator);
         values_allocator = std::move(other.values_allocator);
@@ -427,7 +433,7 @@ private:
 
         std::vector<skip_t> new_skip_fields(new_capacity / skip_bits, 0);
 
-        std::size_t offset{new_capacity / 4};
+        const std::size_t offset{new_capacity / 4};
 
         std::memmove(keys_buf.get() + offset, keys, capacity_ * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
@@ -481,7 +487,7 @@ private:
         std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
         set_occupied(idx);
         beg = std::min(idx,beg);
-        std::size_t start = get_prev_live(idx) + 1;
+        const std::size_t start = get_prev_live(idx) + 1;
         std::size_t end{idx};
         std::size_t next = idx + 1;
         if (next < capacity_ && compare(keys[next], key)) {
@@ -493,12 +499,116 @@ private:
         hook(values[idx], idx);
         fill_gap(start, end, key);
         ++size_;
+        if (--rebalance_countdown == 0) {
+            rebalance_countdown = rebalance_period;
+            idx = rebalance_after_insert(idx);
+        }
         return {iterator{this, idx}, true};
     }
 
     void fill_gap(std::size_t start, std::size_t end, key_t key) {
         for (std::size_t idx{start}; idx < end; ++idx) {
             keys[idx] = key;
+        }
+    }
+
+    std::size_t rebalance_after_insert(std::size_t idx) {
+        const std::size_t seg{idx / skip_bits};
+        const std::size_t leaf_count{static_cast<std::size_t>(std::popcount(used_fields[seg]))};
+        [[unlikely]] if (leaf_count <= leaf_max_count) {
+            return idx;
+        }
+
+        const key_t key{keys[idx]};
+        const std::size_t height{static_cast<std::size_t>(std::countr_zero(used_fields.size()))};
+        for (std::size_t level{1}; level <= height; ++level) {
+            const std::size_t level_window_width{static_cast<std::size_t>(std::pow(2, level))};
+            const std::size_t seg_lo{seg - seg % level_window_width};
+            const std::size_t seg_hi{seg_lo + level_window_width};
+            const std::size_t live{count_live_in_segments(seg_lo, seg_hi)};
+            if (live <= window_live_limit(level, height, level_window_width * skip_bits)) {
+                spread_elements(seg_lo * skip_bits, seg_hi * skip_bits);
+                return live_slot(key);
+            }
+        }
+
+        allocate(capacity_ * scaling_factor);
+        spread_elements(0, capacity_);
+        return live_slot(key);
+    }
+
+    static std::size_t window_live_limit(std::size_t level, std::size_t height, std::size_t window_slots) {
+        const double fraction = density_upper_leaf
+            - (density_upper_leaf - density_upper_root) * static_cast<double>(level) / static_cast<double>(height);
+        return static_cast<std::size_t>(fraction * static_cast<double>(window_slots));
+    }
+
+    std::size_t count_live_in_segments(std::size_t seg_lo, std::size_t seg_hi) const {
+        std::size_t count{0};
+        for (std::size_t seg{seg_lo}; seg < seg_hi; ++seg) {
+            count += static_cast<std::size_t>(std::popcount(used_fields[seg]));
+        }
+        return count;
+    }
+
+    std::size_t live_slot(const key_t& key) const {
+        const std::size_t idx{lower_bound_slot(key)};
+        return test_bit(idx) ? idx : get_next_live(idx);
+    }
+
+    void relocate(std::size_t dst, std::size_t src) {
+        keys[dst] = keys[src];
+        if constexpr (std::is_trivially_move_constructible_v<value_t>) {
+            values[dst] = std::move(values[src]);
+        } else {
+            move_value(values + dst, src);
+        }
+        set_occupied(dst);
+        set_unoccupied(src);
+        hook(values[dst], dst);
+    }
+
+    void spread_elements(std::size_t low, std::size_t high) {
+        const std::size_t count{compact_left(low, high)};
+        fan_out_evenly(low, high, count);
+        restore_keys_to_monotonic(low, high);
+        if (beg >= low && beg < high) {
+            beg = low;
+        }
+    }
+
+    std::size_t compact_left(std::size_t low, std::size_t high) {
+        std::size_t dst{low};
+        for (std::size_t src{low}; src < high; ++src) {
+            if (test_bit(src)) {
+                if (src != dst) {
+                    relocate(dst, src);
+                }
+                ++dst;
+            }
+        }
+        return dst - low;
+    }
+
+    void fan_out_evenly(std::size_t low, std::size_t high, std::size_t count) {
+        const std::size_t width{high - low};
+        for (std::size_t rank{count}; rank-- > 0;) {
+            const std::size_t from{low + rank};
+            const std::size_t to{low + rank * width / count};
+            if (from != to) {
+                relocate(to, from);
+            }
+        }
+    }
+
+    void restore_keys_to_monotonic(std::size_t low, std::size_t high) {
+        key_t carry{high < capacity_ ? keys[high] : keys[rightmost_live()]};
+        for (std::size_t src{high}; src-- > low;) {
+            if (test_bit(src)) {
+                carry = keys[src];
+            } else {
+                keys[src] = carry;
+            }
         }
     }
 
@@ -596,6 +706,7 @@ private:
     std::vector<skip_t> used_fields{};
     std::size_t size_{0};
     std::size_t capacity_{0};
+    std::size_t rebalance_countdown{rebalance_period};
     std::size_t beg{npos};
     [[no_unique_address]] Compare compare{};
     [[no_unique_address]] OnChangePosHook hook{};

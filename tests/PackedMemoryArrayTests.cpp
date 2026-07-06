@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <numeric>
 #include <random>
 #include <set>
+#include <unordered_map>
 #include <vector>
 #include <print>
 
@@ -286,4 +289,72 @@ TEST(PMATests, valueLookupByKey) {
     EXPECT_EQ(ds.find(75)->v, 75);
     EXPECT_EQ(ds.find(99), ds.end());
     EXPECT_EQ(ds.lower_bound(60)->v, 75);
+}
+
+namespace {
+    std::unordered_map<int, std::size_t>* g_pos = nullptr;
+
+    struct RecordPosHook {
+        void operator()(int value, std::size_t idx) const {
+            if (g_pos) {
+                (*g_pos)[value] = idx;
+            }
+        }
+    };
+} // namespace
+
+TEST(PMATests, hookTracksPositionsThroughRebalance) {
+    std::unordered_map<int, std::size_t> pos;
+    g_pos = &pos;
+    packed_memory_array<int, int, std::less<>, RecordPosHook> ds;
+
+    std::mt19937 rng(2024);
+    std::uniform_int_distribution<int> keyDist(0, 5000);
+    for (int step = 0; step < 40000; ++step) {
+        int k = keyDist(rng);
+        if (step % 3 != 0) {
+            ds.insert(k, k);
+        } else {
+            auto it = ds.find(k);
+            if (it != ds.end()) ds.erase(it);
+        }
+    }
+
+    std::size_t live = 0;
+    for (std::size_t idx = 0; idx < ds.capacity_; ++idx) {
+        if (ds.test_bit(idx)) {
+            ++live;
+            int v = ds.values[idx];
+            ASSERT_EQ(ds.keys[idx], v);
+            auto found = pos.find(v);
+            ASSERT_NE(found, pos.end());
+            ASSERT_EQ(found->second, idx);
+        }
+    }
+    ASSERT_EQ(live, ds.size());
+    g_pos = nullptr;
+}
+
+TEST(PMATests, insertReturnsLiveIteratorAndKeepsKeysMonotonic) {
+    packed_memory_array<int, int> ds;
+    std::vector<int> order(6000);
+    std::iota(order.begin(), order.end(), 0);
+    std::shuffle(order.begin(), order.end(), std::mt19937(2137));
+
+    for (int k: order) {
+        auto [it, inserted] = ds.insert(k, k * 10);
+        ASSERT_TRUE(inserted);
+        ASSERT_EQ(*it, k * 10);
+    }
+
+    for (std::size_t idx = 1; idx < ds.capacity(); ++idx) {
+        ASSERT_LE(ds.keys[idx - 1], ds.keys[idx]);
+    }
+
+    int expected = 0;
+    for (int v: ds) {
+        ASSERT_EQ(v, expected * 10);
+        ++expected;
+    }
+    ASSERT_EQ(expected, 6000);
 }

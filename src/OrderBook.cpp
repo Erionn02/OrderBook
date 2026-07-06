@@ -8,7 +8,7 @@ std::vector<Trade> OrderBook::addOrder(Order order) {
     if (order.getSide() == TradeSide::Buy) {
         return addOrderImpl(order, std::less<Price>{}, asks, bids);
     }
-    return addOrderImpl(order, std::greater<Price>{},bids, asks);
+    return addOrderImpl(order, std::greater<Price>{}, bids, asks);
 }
 
 void OrderBook::cancelOrder(OrderId orderId) {
@@ -16,22 +16,34 @@ void OrderBook::cancelOrder(OrderId orderId) {
     cancelOrderInternal(it);
 }
 
+PriceLevel* OrderBook::allocatePriceLevel(Price price) {
+    if (!price_level_cache.empty()) {
+        auto last = price_level_cache.back();
+        price_level_cache.pop_back();
+        last->price = price;
+        return last;
+    }
+    auto level = &price_level_source.emplace_back();
+    level->price = price;
+    return level;
+}
+
 void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
     if (it != orders.end()) {
-        auto orderIt = it->second.first;
+        auto [orderIt, level] = it->second;
         if (orderIt->getSide() == TradeSide::Buy) {
-            auto level_it = it->second.second;
-            PriceLevel& level = level_it->second;
-            level.orders.erase(orderIt);
-            if (level.orders.empty()) {
-                bids.erase(level_it);
+            level->orders.erase(orderIt);
+            if (level->orders.empty()) {
+                price_level_cache.push_back(level);
+                using itType = std::remove_cvref_t<decltype(bids)>::iterator;
+                bids.erase(itType(&bids, level->idx));
             }
         } else {
-            auto level_it = it->second.second;
-            PriceLevel& level = level_it->second;
-            level.orders.erase(orderIt);
-            if (level.orders.empty()) {
-                asks.erase(level_it);
+            level->orders.erase(orderIt);
+            if (level->orders.empty()) {
+                price_level_cache.push_back(level);
+                using itType = std::remove_cvref_t<decltype(asks)>::iterator;
+                asks.erase(itType(&asks, level->idx));
             }
         }
         orders.erase(it);
@@ -43,7 +55,7 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Pr
     if (it == orders.end()) {
         return {};
     }
-    Order newOrder{orderId, (it->second.first)->getType(), quantity, price, (it->second.first)->getSide()};
+    Order newOrder{orderId, it->second.first->getType(), quantity, price, it->second.first->getSide()};
     cancelOrderInternal(it);
 
     return addOrder(newOrder);

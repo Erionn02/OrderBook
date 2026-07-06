@@ -127,7 +127,7 @@ private:
             if (it == levels.end()) {
                 pushUpdate(price, 0, side, PriceLevelAction::DELETE);
             } else {
-                pushUpdate(price, levelTotal(it->second), side, PriceLevelAction::UPDATE);
+                pushUpdate(price, levelTotal(**it), side, PriceLevelAction::UPDATE);
             }
         };
         if (side == TradeSide::Buy) {

@@ -4,9 +4,11 @@
 #include "PriceLevel.hpp"
 
 #include <vector>
-#include <map>
 #include <utility>
 #include <boost/unordered/unordered_flat_map.hpp>
+#include <deque>
+
+#include "packed_memory_array.hpp"
 
 class OrderBook {
 public:
@@ -23,19 +25,17 @@ public:
     std::size_t getOrdersCount() const;
     Order getOrder(OrderId orderId) const;
     const auto& getOrders() const { return orders; }
-    const std::map<Price, PriceLevel, std::greater<>>& getBids() const { return bids; }
-    const std::map<Price, PriceLevel, std::less<>>& getAsks() const { return asks; }
+    const auto& getBids() const { return bids; }
+    const auto& getAsks() const { return asks; }
 private:
-    using BidsMap = std::map<Price, PriceLevel, std::greater<>>;
-    using AsksMap = std::map<Price, PriceLevel, std::less<>>;
-    static_assert(std::is_same_v<BidsMap::iterator, AsksMap::iterator>);
+    PriceLevel *allocatePriceLevel(Price price);
 
-    using OrderHashMap = boost::unordered_flat_map<OrderId, std::pair<decltype(PriceLevel::orders)::iterator, AsksMap::iterator>>;
+    using OrderHashMap = boost::unordered_flat_map<OrderId, std::pair<decltype(PriceLevel::orders)::iterator, PriceLevel*>>;
 
     void cancelOrderInternal(OrderHashMap::iterator it);
 
     template<typename Comp, typename OrderMap, typename ToInsertMap>
-    std::vector<Trade> addOrderImpl(Order &order, Comp &&price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
+    std::vector<Trade> addOrderImpl(Order& order, Comp&& price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
         switch (order.getType()) {
             case OrderType::Limit:
                 return handleOrder<OrderType::Limit>(order, std::forward<Comp>(price_comparator), order_map, to_insert_map);
@@ -54,12 +54,13 @@ private:
     }
 
     template<OrderType order_type, typename Comp, typename OrderMap, typename ToInsertMap>
-    std::vector<Trade> handleOrder(Order &order, [[maybe_unused]] Comp && price_comparator, OrderMap& order_map, [[maybe_unused]] ToInsertMap& to_insert_map) {
+    std::vector<Trade> handleOrder(Order& order, [[maybe_unused]] Comp&& price_comparator, OrderMap& order_map,
+                                   [[maybe_unused]] ToInsertMap& to_insert_map) {
         std::vector<Trade> trades;
         for (auto it = order_map.begin(); it != order_map.end();) {
-            auto &[price, level] = *it;
+            auto& level = **it;
             if constexpr (order_type == OrderType::Limit || order_type == OrderType::ImmediateOrCancel) {
-                if (price_comparator(order.getPrice(), price)) {
+                if (price_comparator(order.getPrice(), level.price)) {
                     break;
                 }
             }
@@ -76,6 +77,8 @@ private:
                 }
             }
             if (level.orders.empty()) {
+                PriceLevel* lvl = *it;
+                price_level_cache.push_back(lvl);
                 it = order_map.erase(it);
             } else {
                 ++it;
@@ -86,21 +89,21 @@ private:
             }
         }
         if constexpr (order_type == OrderType::Limit) {
-            auto [price_level_it, _] = to_insert_map.try_emplace(order.getPrice(), PriceLevel{});
-            auto &levelOrders = price_level_it->second.orders;
-            orders.emplace(order.getId(), std::pair{levelOrders.insert(levelOrders.end(), order), price_level_it});
+            auto [price_level_it, _] = to_insert_map.get_or_insert(order.getPrice(), [&] { return allocatePriceLevel(order.getPrice()); });
+            auto& levelOrders = (*price_level_it)->orders;
+            orders.emplace(order.getId(), std::pair{levelOrders.insert(levelOrders.end(), order), *price_level_it});
         }
         return trades;
     }
 
     template<typename Comp, typename OrderMap>
-    bool canFillFillOrKillOrder(const Order &order, Comp &&price_comparator, const OrderMap& order_map) const {
+    bool canFillFillOrKillOrder(const Order& order, Comp&& price_comparator, const OrderMap& order_map) const {
         Quantity canFill{0};
-        for (auto &[price, level]: order_map) {
-            if (price_comparator(order.getPrice(), price)) {
+        for (auto& level: order_map) {
+            if (price_comparator(order.getPrice(), level->price)) {
                 break;
             }
-            for (const auto& existing_order: level.orders) {
+            for (const auto& existing_order: level->orders) {
                 canFill += existing_order.getQuantity();
                 if (canFill >= order.getQuantity()) {
                     return true;
@@ -110,8 +113,17 @@ private:
         return false;
     }
 
-    BidsMap bids{};
-    AsksMap asks{};
+    std::vector<PriceLevel*> price_level_cache{};
+    std::deque<PriceLevel> price_level_source{};
+
+    struct UpdateIdxHook {
+        void operator()(PriceLevel* level, std::size_t idx) {
+            level->idx = idx;
+        }
+    };
+
+    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook> bids{};
+    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook> asks{};
 
     OrderHashMap orders{};
 };

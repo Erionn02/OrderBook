@@ -1,10 +1,10 @@
 set -e
 build_type="Debug"
 build_dir="cmake-build-debug"
-if [ "$1" == "Release" ];
+if [ $# -ne 0 ];
 then
-    build_type="Release"
-    build_dir="cmake-build-release"
+    build_type=$1
+    build_dir="cmake-build-$(echo "$1" | awk '{print tolower($0)}')"
 fi
 mkdir -p $build_dir
 conan install . --output-folder=$build_dir --build=missing -s build_type=$build_type

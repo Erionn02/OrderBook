@@ -5,9 +5,11 @@
 
 struct Order {
     Order() = default;
-    
+
     Order(OrderId id, OrderType type, Quantity quantity, Price price, TradeSide side) : id(id),
-        initialQuantity(quantity), quantity(quantity), price(price), type(type), side(side) {}
+                                                                                        initialQuantity(quantity), quantity(quantity), price(price),
+                                                                                        type(type), side(side) {
+    }
 
     Quantity fill(Order& other) {
         Quantity filled{std::min(other.quantity, quantity)};
@@ -49,6 +51,7 @@ struct Order {
     }
 
     bool operator==(const Order& other) const = default;
+
 private:
     OrderId id;
     Quantity initialQuantity;

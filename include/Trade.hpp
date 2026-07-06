@@ -9,6 +9,6 @@ struct Trade {
     TradeSide aggressor_side;
     Price price;
     Quantity quantity;
+
     bool operator==(const Trade&) const = default;
 };
-

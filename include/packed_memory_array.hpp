@@ -189,7 +189,7 @@ public:
 
     template<typename Callable> requires(std::is_same_v<value_t, decltype(std::declval<Callable>()())>)
     std::pair<iterator, bool> get_or_insert(key_t key, Callable&& callable) {
-        if (size_ == 0) {
+        [[unlikely]] if (size_ == 0) {
             return insert_at(key, callable(), capacity_ / 2);
         }
 
@@ -256,7 +256,7 @@ public:
         }
         std::size_t prev_live = get_prev_live(idx);
         std::size_t start = prev_live + 1;
-        if (next_live != npos) {
+        [[likely]] if (next_live != npos) {
             fill_gap(start, next_live, keys[next_live]);
         } else if (prev_live != npos) {
             fill_gap(start, capacity_, keys[prev_live]);
@@ -282,7 +282,7 @@ private:
         static constexpr std::size_t DISTANCE_CHECK_OTHER{33};
         std::size_t right = get_next_gap(idx);
         std::size_t distance_to_right = right - idx;
-        if (distance_to_right < DISTANCE_CHECK_OTHER) {
+        [[likely]] if (distance_to_right < DISTANCE_CHECK_OTHER) {
             shift_right(idx, distance_to_right);
             return idx;
         }
@@ -299,7 +299,7 @@ private:
             shift_left(first_live_after_gap, to_move_count);
             return prev_idx;
         }
-        if (right != npos) {
+        [[unlikely]] if (right != npos) {
             shift_right(idx, distance_to_right);
             return idx;
         }
@@ -520,7 +520,7 @@ private:
 
     template<typename F>
     std::size_t get_next(std::size_t idx, F&& operation_on_bit_field) const {
-        if (idx >= capacity_) {
+        [[unlikely]] if (idx >= capacity_) {
             return npos;
         }
 
@@ -556,10 +556,10 @@ private:
 
     template<typename F>
     std::size_t get_prev(std::size_t idx, F&& operation_on_bit_field) const {
-        if (idx == 0) {
+        [[unlikely]] if (idx == 0) {
             return npos;
         }
-        if (idx >= capacity_) {
+        [[unlikely]] if (idx >= capacity_) {
             idx = capacity_ - 1;
         }
 

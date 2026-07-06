@@ -213,7 +213,7 @@ public:
 
     template<typename Val>
     std::pair<iterator, bool> insert(key_t key, Val&& value) {
-        if (size_ == 0) {
+        [[unlikely]] if (size_ == 0) {
             return insert_at(key, std::forward<Val>(value), capacity_ / 2);
         }
 
@@ -279,12 +279,16 @@ public:
 
 private:
     std::size_t make_room_at(std::size_t idx) {
-        if (std::size_t right = get_next_gap(idx); right != npos) {
-            std::size_t to_move_count = right - idx;
-            shift_right(idx, to_move_count);
+        static constexpr std::size_t DISTANCE_CHECK_OTHER{33};
+        std::size_t right = get_next_gap(idx);
+        std::size_t distance_to_right = right - idx;
+        if (distance_to_right < DISTANCE_CHECK_OTHER) {
+            shift_right(idx, distance_to_right);
             return idx;
         }
-        if (std::size_t left = get_prev_gap(idx); left != npos) {
+        std::size_t left = get_prev_gap(idx);
+        std::size_t distance_to_left = idx - left;
+        if (left != npos && distance_to_left <= distance_to_right) {
             // we know that idx points to an element greater than we want to insert, so we want to see if we can
             // move left part of the array so we could insert before that that key
             std::size_t first_live_after_gap = left + 1;
@@ -294,6 +298,10 @@ private:
 
             shift_left(first_live_after_gap, to_move_count);
             return prev_idx;
+        }
+        if (right != npos) {
+            shift_right(idx, distance_to_right);
+            return idx;
         }
 
         // we didn't find a gap so after allocation it must be in both left and right end of the old buffer, offset adjusted

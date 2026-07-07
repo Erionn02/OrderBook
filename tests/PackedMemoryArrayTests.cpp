@@ -14,30 +14,30 @@
 using namespace ::testing;
 
 namespace {
-    struct IntSet {
-        packed_memory_array<int, int> ds;
-        bool insert(int x) { return ds.insert(x, x).second; }
+struct IntSet {
+    packed_memory_array<int, int> ds;
+    bool insert(int x) { return ds.insert(x, x).second; }
 
-        bool erase(int x) {
-            auto it = ds.find(x);
-            if (it == ds.end()) return false;
-            ds.erase(it);
-            return true;
-        }
+    bool erase(int x) {
+        auto it = ds.find(x);
+        if (it == ds.end()) return false;
+        ds.erase(it);
+        return true;
+    }
 
-        bool contains(int x) { return ds.find(x) != ds.end(); }
+    bool contains(int x) { return ds.find(x) != ds.end(); }
 
-        std::size_t size() const { return ds.size(); }
+    std::size_t size() const { return ds.size(); }
 
-        std::vector<int> toVector() const {
-            return {ds.begin(), ds.end()};
-        }
+    std::vector<int> toVector() const {
+        return {ds.begin(), ds.end()};
+    }
 
-        void print(int x) const {
-            std::vector<int> keys_vec(ds.keys, ds.keys + ds.capacity_);
-            std::println("after insert [{}], live: {} \n keys: {} \n", x, toVector(), keys_vec);
-        }
-    };
+    void print(int x) const {
+        std::vector<int> keys_vec(ds.keys, ds.keys + ds.capacity_);
+        std::println("after insert [{}], live: {} \n keys: {} \n", x, toVector(), keys_vec);
+    }
+};
 } // namespace
 
 TEST(PMATests, getNextLive) {
@@ -212,20 +212,20 @@ TEST(PMATests, randomizedOracleVsStdSet) {
 }
 
 namespace {
-    int g_live = 0;
+int g_live = 0;
 
-    struct Counted {
-        int v;
-        Counted(int x) : v(x) { ++g_live; }
-        Counted(const Counted &o) : v(o.v) { ++g_live; }
-        Counted(Counted &&o) noexcept : v(o.v) { ++g_live; }
+struct Counted {
+    int v;
+    Counted(int x) : v(x) { ++g_live; }
+    Counted(const Counted& o) : v(o.v) { ++g_live; }
+    Counted(Counted&& o) noexcept : v(o.v) { ++g_live; }
 
-        Counted &operator=(const Counted &) = default;
+    Counted& operator=(const Counted&) = default;
 
-        Counted &operator=(Counted &&) = default;
+    Counted& operator=(Counted&&) = default;
 
-        ~Counted() { --g_live; }
-    };
+    ~Counted() { --g_live; }
+};
 } // namespace
 
 TEST(PMATests, constructDestroyBalance) {
@@ -254,8 +254,8 @@ TEST(PMATests, constructDestroyBalance) {
 }
 
 TEST(PMATests, randomizedOracleDescendingWideRange) {
-    packed_memory_array<int, int, std::greater<int> > ds;
-    std::set<int, std::greater<int> > oracle;
+    packed_memory_array<int, int, std::greater<>> ds;
+    std::set<int, std::greater<>> oracle;
     std::mt19937 rng(777);
     std::uniform_int_distribution<int> keyDist(-5000, 5000);
     std::uniform_int_distribution<int> opDist(0, 3);
@@ -306,15 +306,15 @@ TEST(PMATests, valueLookupByKey) {
 }
 
 namespace {
-    std::unordered_map<int, std::size_t>* g_pos = nullptr;
+std::unordered_map<int, std::size_t>* g_pos = nullptr;
 
-    struct RecordPosHook {
-        void operator()(int value, std::size_t idx) const {
-            if (g_pos) {
-                (*g_pos)[value] = idx;
-            }
+struct RecordPosHook {
+    void operator()(int value, std::size_t idx) const {
+        if (g_pos) {
+            (*g_pos)[value] = idx;
         }
-    };
+    }
+};
 } // namespace
 
 TEST(PMATests, hookTracksPositionsThroughRebalance) {

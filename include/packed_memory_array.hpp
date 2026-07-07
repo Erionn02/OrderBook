@@ -470,7 +470,7 @@ private:
         return offset;
     }
 
-    static constexpr std::size_t simd_block_width{std::simd::__native_abi_t<key_t>::_S_size};
+    static constexpr std::size_t simd_block_width{std::simd::vec<key_t>::size()};
     static constexpr std::size_t simd_tail_width{simd_block_width * 4};
     static_assert(alloc_min_chunk >= simd_tail_width);
 

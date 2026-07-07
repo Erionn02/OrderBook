@@ -12,7 +12,9 @@
 
 class OrderBook {
 public:
-    OrderBook() = default;
+    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15))) {
+        orders.reserve(orders_reserve);
+    }
     OrderBook(const OrderBook&) = delete;
     OrderBook& operator=(const OrderBook&) = delete;
     OrderBook(OrderBook&&) = default;

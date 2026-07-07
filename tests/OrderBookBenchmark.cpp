@@ -1,5 +1,6 @@
 #include "OrderBook.hpp"
 #include "MarketDataGenerator.hpp"
+#include "LatencyRecorder.hpp"
 
 #include <benchmark/benchmark.h>
 #include <vector>
@@ -21,8 +22,10 @@ static std::pair<OrderBook, std::vector<OrderId>> buildPopulatedBook(std::size_t
     return {std::move(book), std::move(ids)};
 }
 
+template<bool record_latency>
 static void BM_AddOrder(benchmark::State &state) {
     const std::size_t n = static_cast<std::size_t>(state.range(0));
+    LatencyRecorder latency_recorder;
 
     MarketParams deep_params{.cancel_rate = 0, .modify_rate = 0};
 
@@ -31,23 +34,26 @@ static void BM_AddOrder(benchmark::State &state) {
 
     for (auto _: state) {
         state.PauseTiming();
-        OrderBook book;
+        OrderBook book{};
         state.ResumeTiming();
-        for (const auto &o: orders)
-            benchmark::DoNotOptimize(book.addOrder(o));
+        for (const auto &o: orders) {
+            RecordOperation(benchmark::DoNotOptimize(book.addOrder(o)))
+        }
     }
 
-    state.SetItemsProcessed(
-        state.iterations()
-        * static_cast<std::int64_t>(n));
+    if constexpr (record_latency) {
+        reportLatency(state, latency_recorder);
+    } else {
+        state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+    }
 }
 
-BENCHMARK(BM_AddOrder)
-    ->RangeMultiplier(10)->Range(100'000, 10'000'000)
-    ->Unit(benchmark::kSecond);
+BENCHMARK(BM_AddOrder<false>)->RangeMultiplier(10)->Range(100'000, 10'000'000)->Unit(benchmark::kSecond)->Name("BM_AddOrder");
+BENCHMARK(BM_AddOrder<true>)->Arg(10'000'000)->Unit(benchmark::kSecond)->Name("BM_AddOrderLatency");
 
-
+template<bool record_latency>
 static void BM_CancelOrder(benchmark::State &state) {
+    LatencyRecorder latency_recorder;
     const std::size_t n = static_cast<std::size_t>(state.range(0));
 
     for (auto _: state) {
@@ -56,21 +62,23 @@ static void BM_CancelOrder(benchmark::State &state) {
         state.ResumeTiming();
 
         for (OrderId id: ids) {
-            book.cancelOrder(id);
+            RecordOperation(book.cancelOrder(id));
         }
     }
 
-    state.SetItemsProcessed(
-        state.iterations()
-        * static_cast<std::int64_t>(n));
+    if constexpr (record_latency) {
+        reportLatency(state, latency_recorder);
+    } else {
+        state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+    }
 }
 
-BENCHMARK(BM_CancelOrder)
-    ->RangeMultiplier(10)->Range(100'000, 10'000'000)
-    ->Unit(benchmark::kSecond);
+BENCHMARK(BM_CancelOrder<false>)->RangeMultiplier(10)->Range(100'000, 10'000'000)->Unit(benchmark::kSecond)->Name("BM_CancelOrder");
+BENCHMARK(BM_CancelOrder<true>)->Arg(10'000'000)->Unit(benchmark::kSecond)->Name("BM_CancelOrderLatency");
 
-
+template<bool record_latency>
 static void BM_ModifyOrder(benchmark::State &state) {
+    LatencyRecorder latency_recorder;
     const std::size_t n = static_cast<std::size_t>(state.range(0));
 
     std::size_t total_processed{0};
@@ -88,45 +96,52 @@ static void BM_ModifyOrder(benchmark::State &state) {
         state.ResumeTiming();
 
         for (auto &[id, qty, px]: mods) {
-            book.modifyOrder(id, qty, px);
+            RecordOperation(book.modifyOrder(id, qty, px));
         }
     }
 
-    state.SetItemsProcessed(static_cast<std::int64_t>(total_processed));
+    if constexpr (record_latency) {
+        reportLatency(state, latency_recorder);
+    } else {
+        state.SetItemsProcessed(static_cast<std::int64_t>(total_processed));
+    }
 }
 
-BENCHMARK(BM_ModifyOrder)
-    ->RangeMultiplier(10)->Range(100'000, 10'000'000)
-    ->Unit(benchmark::kSecond);
+BENCHMARK(BM_ModifyOrder<false>)->RangeMultiplier(10)->Range(100'000, 10'000'000)->Unit(benchmark::kSecond)->Name("BM_ModifyOrder");
+BENCHMARK(BM_ModifyOrder<true>)->Arg(10'000'000)->Unit(benchmark::kSecond)->Name("BM_ModifyOrderLatency");
 
 
+template<bool record_latency>
 static void BM_MixedStream(benchmark::State &state) {
+    LatencyRecorder latency_recorder;
     RealisticGenerator gen{};
     auto events = gen.generateStream(static_cast<std::size_t>(state.range(0)));
     for (auto _: state) {
-        OrderBook book;
+        OrderBook book{};
         for (const auto &ev: events) {
             // switch turns out to be faster than ev.visit(overloads{...})
             switch (ev.index()) {
                 case 0:
-                    benchmark::DoNotOptimize(book.addOrder(std::get<AddEvent>(ev).order));
+                    RecordOperation(benchmark::DoNotOptimize(book.addOrder(std::get<AddEvent>(ev).order)));
                     break;
                 case 1:
-                    book.modifyOrder(std::get<ModifyEvent>(ev).targetId, std::get<ModifyEvent>(ev).new_qty, std::get<ModifyEvent>(ev).new_price);
+                    RecordOperation(book.modifyOrder(std::get<ModifyEvent>(ev).targetId, std::get<ModifyEvent>(ev).new_qty, std::get<ModifyEvent>(ev).new_price));
                     break;
                 case 2:
-                    book.cancelOrder(std::get<CancelEvent>(ev).targetId);
+                    RecordOperation(book.cancelOrder(std::get<CancelEvent>(ev).targetId));
                     break;
             }
         }
     }
 
-    state.SetItemsProcessed(
-        state.iterations()
-        * static_cast<std::int64_t>(events.size()));
+    if constexpr (record_latency) {
+        reportLatency(state, latency_recorder);
+    } else {
+        state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(events.size()));
+    }
 }
 
-BENCHMARK(BM_MixedStream)->Arg(1'000'000)
-    ->Unit(benchmark::kSecond);
+BENCHMARK(BM_MixedStream<false>)->Arg(1'000'000)->Unit(benchmark::kSecond)->Name("BM_MixedStream");
+BENCHMARK(BM_MixedStream<true>)->Arg(1'000'000)->Unit(benchmark::kSecond)->Name("BM_MixedStreamLatency");
 
 BENCHMARK_MAIN();

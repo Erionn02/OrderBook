@@ -55,9 +55,16 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Pr
     if (it == orders.end()) {
         return {};
     }
-    Order newOrder{orderId, it->second.first->getType(), quantity, price, it->second.first->getSide()};
+    Order& oldOrder = *it->second.first;
+    Order newOrder{orderId, oldOrder.getType(), quantity, price, oldOrder.getSide()};
+    if (price == it->second.first->getPrice()) {
+        PriceLevel* level = it->second.second;
+        level->orders.erase(it->second.first);
+        auto new_it = level->orders.emplace_back(newOrder);
+        *it->second.first = new_it;
+        return {};
+    }
     cancelOrderInternal(it);
-
     return addOrder(newOrder);
 }
 

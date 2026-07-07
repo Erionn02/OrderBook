@@ -1,10 +1,13 @@
 #pragma once
 
 #include <vector>
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <memory>
 #include <ranges>
+#include <simd>
+#include <span>
 
 // here I try to keep consistency with stl-like naming sice it's stl-like container, but for very specific use-case
 
@@ -467,18 +470,37 @@ private:
         return offset;
     }
 
+    static constexpr std::size_t simd_block_width{std::simd::__native_abi_t<key_t>::_S_size};
+    static constexpr std::size_t simd_tail_width{simd_block_width * 4};
+    static_assert(alloc_min_chunk >= simd_tail_width);
+
+    std::size_t simd_prefix_before(std::size_t base, key_t key) const {
+        using key_vec = std::simd::vec<key_t, simd_block_width>;
+        const auto block = std::simd::unchecked_load<key_vec>(std::span{keys + base, simd_block_width});
+        return static_cast<std::size_t>(std::simd::reduce_count(compare(block, key)));
+    }
+
     std::size_t lower_bound_slot(const key_t& key) const {
-        std::size_t low{0};
-        std::size_t high{capacity_};
-        while (low < high) {
-            auto mid = (low + high) / 2;
-            if (compare(keys[mid], key)) {
-                low = mid + 1;
-            } else {
-                high = mid;
+        if constexpr (std::is_arithmetic_v<key_t>) {
+            std::size_t lo{0};
+            std::size_t hi{capacity_};
+            while (hi - lo > simd_tail_width) {
+                std::size_t mid = (lo + hi) >> 1;
+                if (compare(keys[mid], key)) {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
             }
+            const std::size_t base = lo > capacity_ - simd_tail_width ? capacity_ - simd_tail_width : lo;
+            std::size_t offset{0};
+            for (std::size_t block{0}; block < simd_tail_width; block += simd_block_width) {
+                offset += simd_prefix_before(base + block, key);
+            }
+            return base + offset;
+        } else {
+            return static_cast<std::size_t>(std::lower_bound(keys, keys + capacity(), key, compare) - keys);
         }
-        return low;
     }
 
     template<typename Val>

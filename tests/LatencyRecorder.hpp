@@ -58,14 +58,22 @@ public:
         if (total_ == 0) {
             return 0.0;
         }
-        const auto target = static_cast<std::uint64_t>(percentile * static_cast<double>(total_)) + 1;
-        std::uint64_t cumulative{0};
-        for (std::size_t cycles{0}; cycles < bins.size() - 1; ++cycles) {
-            cumulative += bins[cycles];
-            if (cumulative >= target) {
-                return static_cast<double>(cycles) * nanosecondsPerCycle();
+        const auto target_rank = static_cast<std::uint64_t>(percentile * static_cast<double>(total_)) + 1;
+        std::uint64_t faster_samples{0};
+        double previous_center{0.0};
+        for (auto cluster = nextClusterFrom(0); cluster.count != 0; cluster = nextClusterFrom(cluster.end)) {
+            if (faster_samples + cluster.count < target_rank) {
+                faster_samples += cluster.count;
+                previous_center = cluster.center;
+                continue;
             }
+
+            const double step = faster_samples == 0 ? 0.0 : cluster.center - previous_center;
+            const double window_begin = cluster.center - step / 2;
+            const double fraction_of_cluster = static_cast<double>(target_rank - faster_samples) / static_cast<double>(cluster.count);
+            return (window_begin + fraction_of_cluster * step) * nanosecondsPerCycle();
         }
+
         return static_cast<double>(outliers_sum) / static_cast<double>(bins.back()) * nanosecondsPerCycle();
     }
 
@@ -81,6 +89,36 @@ private:
     std::uint64_t cpuCyclesEnd() {
         unsigned aux;
         return __rdtscp(&aux);
+    }
+
+    constexpr static std::size_t same_grid_point_gap{8};
+
+    struct Cluster {
+        double center;
+        std::uint64_t count;
+        std::size_t end;
+    };
+
+    Cluster nextClusterFrom(std::size_t bin) const {
+        Cluster cluster{0.0, 0, bins.size() - 1};
+        std::uint64_t weighted_sum{0};
+        std::size_t last_occupied{0};
+        for (; bin < bins.size() - 1; ++bin) {
+            if (bins[bin] == 0) {
+                if (cluster.count != 0 && bin - last_occupied >= same_grid_point_gap) {
+                    break;
+                }
+                continue;
+            }
+            cluster.count += bins[bin];
+            weighted_sum += bins[bin] * bin;
+            last_occupied = bin;
+        }
+        if (cluster.count != 0) {
+            cluster.center = static_cast<double>(weighted_sum) / static_cast<double>(cluster.count);
+        }
+        cluster.end = bin;
+        return cluster;
     }
 
 

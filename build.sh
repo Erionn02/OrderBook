@@ -1,6 +1,6 @@
 set -e
-build_type="Debug"
-build_dir="cmake-build-debug"
+build_type="Release"
+build_dir="cmake-build-release"
 if [ $# -ne 0 ];
 then
     build_type=$1

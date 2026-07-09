@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <ranges>
 #include <simd>
@@ -20,6 +21,9 @@ struct NoOp {
 template<typename Key_, typename Value_, typename Compare = std::less<>, typename OnChangePosHook = NoOp>
 class packed_memory_array {
 public:
+    static_assert(std::is_same_v<Compare, std::less<>> || std::is_same_v<Compare, std::greater<>>,
+                  "packed_memory_array supports only std::less<> and std::greater<> comparators, best performance on arithmetic keys");
+
     using key_t = std::remove_cvref_t<Key_>;
     using value_t = std::remove_cvref_t<Value_>;
     using skip_t = std::size_t;
@@ -56,8 +60,7 @@ public:
         using pointer = std::conditional_t<Const, const value_t*, value_t*>;
         using difference_type = std::ptrdiff_t;
 
-        basic_iterator(container* cont, std::size_t idx) : cont(cont), idx(idx) {
-        }
+        basic_iterator(container* cont, std::size_t idx) : cont(cont), idx(idx) {}
 
         reference operator*() const {
             return cont->values[idx];
@@ -90,9 +93,19 @@ public:
     using iterator = basic_iterator<false>;
     using const_iterator = basic_iterator<true>;
 
+    static constexpr bool has_sentinel{std::numeric_limits<key_t>::is_specialized};
+
+    static constexpr key_t lower_sentinel() requires has_sentinel {
+        return std::is_same_v<Compare, std::less<>> ? std::numeric_limits<key_t>::lowest() : std::numeric_limits<key_t>::max();
+    }
+
+    static constexpr key_t upper_sentinel() requires has_sentinel {
+        return std::is_same_v<Compare, std::less<>> ? std::numeric_limits<key_t>::max() : std::numeric_limits<key_t>::lowest();
+    }
+
     packed_memory_array() {
         allocate(alloc_min_chunk);
-        fill_gap(0, capacity_, key_t{});
+        restore_default_state();
     }
 
     packed_memory_array(const packed_memory_array&) = delete;
@@ -159,9 +172,7 @@ public:
             return end();
         }
 
-        if (!test_bit(idx)) {
-            idx = get_next_live(idx);
-        }
+        idx = first_live_at_or_after(idx);
 
         if (idx != npos && keys[idx] == key) {
             return iterator{this, idx};
@@ -175,9 +186,7 @@ public:
             return end();
         }
 
-        if (!test_bit(idx)) {
-            idx = get_next_live(idx);
-        }
+        idx = first_live_at_or_after(idx);
 
         if (idx != npos && keys[idx] == key) {
             return const_iterator{this, idx};
@@ -190,30 +199,42 @@ public:
         if (idx >= capacity_) {
             return end();
         }
-        if (!test_bit(idx)) {
-            idx = get_next_live(idx);
-        }
+        idx = first_live_at_or_after(idx);
         return iterator{this, idx};
     }
+
 
     template<typename Callable> requires(std::is_same_v<value_t, decltype(std::declval<Callable>()())>)
     std::pair<iterator, bool> get_or_insert(key_t key, Callable&& callable) {
         [[unlikely]] if (size_ == 0) {
+            restore_default_state();
             return insert_at(key, callable(), capacity_ / 2);
         }
 
         std::size_t idx = lower_bound_slot(key);
 
         if (idx == capacity_) {
-            return insert_at(key, callable(), append_slot());
+            if constexpr (has_sentinel) {
+                const std::size_t offset = allocate(capacity_ * scaling_factor);
+                return insert_at(key, callable(), 3 * offset);
+            } else {
+                return insert_at(key, callable(), append_slot());
+            }
         }
 
+        const bool is_live = test_bit(idx);
         if (keys[idx] == key) {
-            std::size_t live_idx = test_bit(idx) ? idx : get_next_live(idx);
-            return {iterator{this, live_idx}, false};
+            if constexpr (has_sentinel) {
+                if (is_live) {
+                    return {iterator{this, idx}, false};
+                }
+            } else {
+                std::size_t live_idx = is_live ? idx : get_next_live(idx);
+                return {iterator{this, live_idx}, false};
+            }
         }
 
-        if (!test_bit(idx)) {
+        if (!is_live) {
             return insert_at(key, callable(), idx);
         }
 
@@ -223,18 +244,26 @@ public:
     template<typename Val>
     std::pair<iterator, bool> insert(key_t key, Val&& value) {
         [[unlikely]] if (size_ == 0) {
+            restore_default_state();
             return insert_at(key, std::forward<Val>(value), capacity_ / 2);
         }
 
         std::size_t idx = lower_bound_slot(key);
 
         if (idx == capacity_) {
-            return insert_at(key, std::forward<Val>(value), append_slot());
+            if constexpr (has_sentinel) {
+                const std::size_t offset = allocate(capacity_ * scaling_factor);
+                return insert_at(key, std::forward<Val>(value), 3 * offset);
+            } else {
+                return insert_at(key, std::forward<Val>(value), append_slot());
+            }
         }
 
         if (keys[idx] == key) {
-            std::size_t live_idx = test_bit(idx) ? idx : get_next_live(idx);
-            return {iterator{this, live_idx}, false};
+            std::size_t live_idx = first_live_at_or_after(idx);
+            [[likely]] if (live_idx != npos && keys[live_idx] == key) {
+                return {iterator{this, live_idx}, false};
+            }
         }
 
         if (!test_bit(idx)) {
@@ -263,12 +292,18 @@ public:
         if (idx == beg) {
             beg = next_live;
         }
-        std::size_t prev_live = get_prev_live(idx);
-        std::size_t start = prev_live + 1;
-        [[likely]] if (next_live != npos) {
-            fill_gap(start, next_live, keys[next_live]);
-        } else if (prev_live != npos) {
-            fill_gap(start, capacity_, keys[prev_live]);
+        if constexpr (has_sentinel) {
+            [[unlikely]] if (idx == capacity_ - 1) {
+                keys[idx] = upper_sentinel();
+            }
+        } else {
+            std::size_t prev_live = get_prev_live(idx);
+            std::size_t start = prev_live + 1;
+            [[likely]] if (next_live != npos) {
+                fill_gap(start, next_live, keys[next_live]);
+            } else if (prev_live != npos) {
+                fill_gap(start, capacity_, keys[prev_live]);
+            }
         }
 
         return iterator{this, next_live};
@@ -287,6 +322,15 @@ public:
     }
 
 private:
+    void restore_default_state() {
+        if constexpr (has_sentinel) {
+            fill_gap(0, capacity_ / 2, lower_sentinel());
+            fill_gap(capacity_ / 2, capacity_, upper_sentinel());
+        } else {
+            fill_gap(0, capacity_, key_t{});
+        }
+    }
+
     std::size_t make_room_at(std::size_t idx) {
         static constexpr std::size_t DISTANCE_CHECK_OTHER{33};
         std::size_t right = get_next_gap(idx);
@@ -463,8 +507,13 @@ private:
 
         keys = keys_buf.release();
         capacity_ = new_capacity;
-        fill_gap(0, offset, keys[offset]);
-        fill_gap(3 * offset, capacity_, keys[3 * offset - 1]);
+        if constexpr (has_sentinel) {
+            fill_gap(0, offset, lower_sentinel());
+            fill_gap(3 * offset, capacity_, upper_sentinel());
+        } else {
+            fill_gap(0, offset, keys[offset]);
+            fill_gap(3 * offset, capacity_, keys[3 * offset - 1]);
+        }
         values = values_buf.release();
         used_fields = std::move(new_skip_fields);
         return offset;
@@ -509,17 +558,19 @@ private:
         std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
         set_occupied(idx);
         beg = std::min(idx,beg);
-        const std::size_t start = get_prev_live(idx) + 1;
-        std::size_t end{idx};
-        std::size_t next = idx + 1;
-        if (next < capacity_ && compare(keys[next], key)) {
-            end = get_next_live(idx);
-            if (end == npos) {
-                end = capacity_;
+        if constexpr (!has_sentinel) {
+            const std::size_t start = get_prev_live(idx) + 1;
+            std::size_t end{idx};
+            std::size_t next = idx + 1;
+            if (next < capacity_ && compare(keys[next], key)) {
+                end = get_next_live(idx);
+                if (end == npos) {
+                    end = capacity_;
+                }
             }
+            fill_gap(start, end, key);
         }
         hook(values[idx], idx);
-        fill_gap(start, end, key);
         ++size_;
         if (--rebalance_countdown == 0) {
             rebalance_countdown = rebalance_period;
@@ -574,8 +625,7 @@ private:
     }
 
     std::size_t live_slot(const key_t& key) const {
-        const std::size_t idx{lower_bound_slot(key)};
-        return test_bit(idx) ? idx : get_next_live(idx);
+        return first_live_at_or_after(lower_bound_slot(key));
     }
 
     void relocate(std::size_t dst, std::size_t src) {
@@ -624,7 +674,16 @@ private:
     }
 
     void restore_keys_to_monotonic(std::size_t low, std::size_t high) {
-        key_t carry{high < capacity_ ? keys[high] : keys[rightmost_live()]};
+        key_t carry{[&] {
+            if (high < capacity_) {
+                return keys[high];
+            }
+            if constexpr (has_sentinel) {
+                return upper_sentinel();
+            } else {
+                return keys[rightmost_live()];
+            }
+        }()};
         for (std::size_t src{high}; src-- > low;) {
             if (test_bit(src)) {
                 carry = keys[src];
@@ -680,6 +739,13 @@ private:
 
     std::size_t get_first_live() const {
         return test_bit(0) ? 0 : get_next_live(0);
+    }
+
+    std::size_t first_live_at_or_after(std::size_t idx) const {
+        [[likely]] if (test_bit(idx)) {
+            return idx;
+        }
+        return idx < beg ? beg : get_next_live(idx);
     }
 
     std::size_t get_next_gap(std::size_t idx) const {

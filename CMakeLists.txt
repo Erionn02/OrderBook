@@ -4,14 +4,11 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message("CMAKE_VERSION: ${CMAKE_VERSION}")
 
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b") # hash for cmake 4.3, if you have different then set an adequate value
 
 project(OrderBook CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_SCAN_FOR_MODULES ON)
-set(CMAKE_CXX_MODULE_STD ON)
 
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeHelpers.cmake)
 add_conan_lib(GTest)

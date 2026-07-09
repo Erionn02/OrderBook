@@ -222,19 +222,14 @@ public:
             }
         }
 
-        const bool is_live = test_bit(idx);
         if (keys[idx] == key) {
-            if constexpr (has_sentinel) {
-                if (is_live) {
-                    return {iterator{this, idx}, false};
-                }
-            } else {
-                std::size_t live_idx = is_live ? idx : get_next_live(idx);
+            std::size_t live_idx = first_live_at_or_after(idx);
+            [[likely]] if (live_idx != npos && keys[live_idx] == key) {
                 return {iterator{this, live_idx}, false};
             }
         }
 
-        if (!is_live) {
+        if (!test_bit(idx)) {
             return insert_at(key, callable(), idx);
         }
 

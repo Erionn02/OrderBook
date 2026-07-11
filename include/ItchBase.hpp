@@ -300,7 +300,7 @@ namespace ITCH {
             TrackingNumber_t tracking_number;
             [[=is_integral{}]] Timestamp48_t timestamp;
             std::size_t order_reference_number;
-            std::uint32_t shares;
+            std::uint32_t executed_shares;
             std::size_t match_number;
             BooleanChar printable;
             Price_32 execution_price;

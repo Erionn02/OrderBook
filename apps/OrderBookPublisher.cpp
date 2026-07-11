@@ -25,7 +25,7 @@ Quantity levelTotal(const PriceLevel &level) {
 }
 
 Quantity getDelta(const ITCH::OrderExecutedMessage &msg) { return msg.executed_shares; }
-Quantity getDelta(const ITCH::OrderExecutedWithPriceMessage &msg) { return msg.shares; }
+Quantity getDelta(const ITCH::OrderExecutedWithPriceMessage &msg) { return msg.executed_shares; }
 Quantity getDelta(const ITCH::OrderCancelMessage &msg) { return msg.cancelled_shares; }
 
 class Publisher {

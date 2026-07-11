@@ -16,6 +16,19 @@ add_conan_lib(benchmark)
 add_conan_lib(asio)
 
 
+set(PGO_MODE "OFF" CACHE STRING "PGO_MODE: OFF, GENERATE, USE")
+
+set(PGO_DIR "${CMAKE_BINARY_DIR}/pgo_data")
+
+if(PGO_MODE STREQUAL "GENERATE")
+    message(STATUS "Build for generating PGO profile")
+    add_compile_options(-O3 -fprofile-generate=${PGO_DIR})
+    add_link_options(-fprofile-generate=${PGO_DIR})
+elseif(PGO_MODE STREQUAL "USE")
+    message(STATUS "Build for using PGO profile")
+    add_compile_options(-O3 -fprofile-use=${PGO_DIR} -fprofile-correction -Wno-missing-profile)
+    add_link_options(-fprofile-use=${PGO_DIR})
+endif()
 
 # Turn on with 'cmake -Dcoverage=ON ..'.
 option(coverage "Build for coverage report." OFF)

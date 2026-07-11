@@ -23,6 +23,8 @@ public:
     std::vector<Trade> addOrder(Order order);
     void cancelOrder(OrderId orderId);
     std::vector<Trade> modifyOrder(OrderId orderId, Quantity quantity, Price price);
+    std::vector<Trade> replaceOrder(OrderId oldOrderId, OrderId newOrderId, Quantity quantity, Price price);
+    void reduceExecutedOrder(OrderId orderId, Quantity reduced_quantity);
 
     std::size_t getOrdersCount() const;
     Order getOrder(OrderId orderId) const;

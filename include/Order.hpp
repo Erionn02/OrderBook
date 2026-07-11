@@ -18,6 +18,12 @@ struct Order {
         return filled;
     }
 
+    Quantity fill(Quantity to_fill) {
+        Quantity filled{std::min(to_fill, quantity)};
+        quantity -= filled;
+        return filled;
+    }
+
     [[nodiscard]] Quantity getFilled() const {
         return initialQuantity - quantity;
     }

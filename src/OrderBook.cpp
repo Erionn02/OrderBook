@@ -13,7 +13,9 @@ std::vector<Trade> OrderBook::addOrder(Order order) {
 
 void OrderBook::cancelOrder(OrderId orderId) {
     auto it = orders.find(orderId);
-    cancelOrderInternal(it);
+    [[likely]] if (it != orders.end()) {
+        cancelOrderInternal(it);
+    }
 }
 
 PriceLevel* OrderBook::allocatePriceLevel(Price price) {
@@ -29,43 +31,66 @@ PriceLevel* OrderBook::allocatePriceLevel(Price price) {
 }
 
 void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
-    if (it != orders.end()) {
-        auto [orderIt, level] = it->second;
-        if (orderIt->getSide() == TradeSide::Buy) {
-            level->orders.erase(orderIt);
-            if (level->orders.empty()) {
-                price_level_cache.push_back(level);
-                using itType = std::remove_cvref_t<decltype(bids)>::iterator;
-                bids.erase(itType(&bids, level->idx));
-            }
-        } else {
-            level->orders.erase(orderIt);
-            if (level->orders.empty()) {
-                price_level_cache.push_back(level);
-                using itType = std::remove_cvref_t<decltype(asks)>::iterator;
-                asks.erase(itType(&asks, level->idx));
-            }
+    auto [orderIt, level] = it->second;
+    if (orderIt->getSide() == TradeSide::Buy) {
+        level->orders.erase(orderIt);
+        [[unlikely]] if (level->orders.empty()) {
+            price_level_cache.push_back(level);
+            using itType = std::remove_cvref_t<decltype(bids)>::iterator;
+            bids.erase(itType(&bids, level->idx));
         }
-        orders.erase(it);
+    } else {
+        level->orders.erase(orderIt);
+        [[unlikely]] if (level->orders.empty()) {
+            price_level_cache.push_back(level);
+            using itType = std::remove_cvref_t<decltype(asks)>::iterator;
+            asks.erase(itType(&asks, level->idx));
+        }
     }
+    orders.erase(it);
 }
 
 std::vector<Trade> OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Price price) {
     auto it = orders.find(orderId);
-    if (it == orders.end()) {
+    [[unlikely]] if (it == orders.end()) {
         return {};
     }
-    Order& oldOrder = *it->second.first;
+    auto [orderIt, level] = it->second;
+    Order& oldOrder = *orderIt;
     Order newOrder{orderId, oldOrder.getType(), quantity, price, oldOrder.getSide()};
-    if (price == it->second.first->getPrice()) {
-        PriceLevel* level = it->second.second;
-        level->orders.erase(it->second.first);
-        auto new_it = level->orders.emplace_back(newOrder);
-        *it->second.first = new_it;
+    if (price == oldOrder.getPrice()) {
+        if (quantity > oldOrder.getQuantity()) {
+            level->orders.erase(it->second.first);
+            it->second.first = level->orders.insert(level->orders.end(), newOrder);
+        } else {
+            oldOrder = newOrder;
+        }
         return {};
     }
     cancelOrderInternal(it);
     return addOrder(newOrder);
+}
+
+std::vector<Trade> OrderBook::replaceOrder(OrderId oldOrderId, OrderId newOrderId, Quantity quantity, Price price) {
+    auto it = orders.find(oldOrderId);
+    [[unlikely]] if (it == orders.end()) {
+        return {};
+    }
+    Order newOrder{newOrderId, it->second.first->getType(), quantity, price, it->second.first->getSide()};
+    cancelOrderInternal(it);
+    return addOrder(newOrder);
+}
+
+void OrderBook::reduceExecutedOrder(OrderId orderId, Quantity reduced_quantity) {
+    auto it = orders.find(orderId);
+    [[unlikely]] if (it == orders.end()) {
+        return;
+    }
+    Order& order = *it->second.first;
+    order.fill(reduced_quantity);
+    if (order.isFilled()) {
+        cancelOrderInternal(it);
+    }
 }
 
 std::size_t OrderBook::getOrdersCount() const {

@@ -5,6 +5,52 @@
 #include <benchmark/benchmark.h>
 #include <vector>
 #include <print>
+#include <fcntl.h>
+#include <thread>
+
+
+void runPerf(bool record) {
+    pid_t parent_pid = getpid();
+    int pipefd[2];
+    pipe2(pipefd, O_CLOEXEC);
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        close(pipefd[0]);
+        struct sched_param param;
+        param.sched_priority = 0;
+        sched_setscheduler(0, SCHED_OTHER, &param);
+        unsetenv("LD_PRELOAD");
+
+        std::string pid_str{std::to_string(parent_pid)};
+        int ret{0};
+        if (record) {
+#define PERF_RECORD_ARGS "perf", "record", "--call-graph", "dwarf", "-p", pid_str.c_str(), "-o", "perf.data", nullptr
+            if (geteuid() == 0) {
+                const char* const argv[] = {"taskset", "-c", "1", PERF_RECORD_ARGS};
+                ret = execvp("taskset", const_cast<char* const*>(argv));
+            } else {
+                const char* const argv[] = {PERF_RECORD_ARGS};
+                ret = execvp("perf", const_cast<char* const*>(argv));
+            }
+        } else {
+#define PERF_STAT_ARGS "perf", "stat", "-d", "-d", "-d", "-p", pid_str.c_str(), "-o", "perf_report.txt", nullptr
+            if (geteuid() == 0) {
+                const char* const argv[] = {"taskset", "-c", "1", PERF_STAT_ARGS};
+                ret = execvp("taskset", const_cast<char* const*>(argv));
+            } else {
+                const char* const argv[] = {PERF_STAT_ARGS};
+                ret = execvp("perf", const_cast<char* const*>(argv));
+            }
+        }
+        std::print("Error: {}", ret);
+    }
+    close(pipefd[1]);
+    char c;
+    read(pipefd[0], &c, 1);
+    close(pipefd[0]);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+}
 
 std::vector<ITCH::Message> parsed_itch_for_stock{};
 
@@ -20,53 +66,19 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
                 using RealType = std::remove_cvref_t<T>;
                 if constexpr (std::is_same_v<RealType, ITCH::AddOrderMessage> || std::is_same_v<RealType, ITCH::AddOrderMPIDAttributionMessage>) {
                     ++messages_processed;
-                    RecordOperationLambda([&]{
-                        Order order{msg.order_reference_number, OrderType::Limit, msg.shares, static_cast<Price>(msg.price), std::bit_cast<TradeSide>(msg.side)};
-                        book.addOrder(order);
-                    })
-                } else if constexpr (std::is_same_v<RealType, ITCH::OrderExecutedMessage>) {
+                    RecordOperation(book.addOrder(Order{msg.order_reference_number, OrderType::Limit, msg.shares, static_cast<Price>(msg.price), std::bit_cast<TradeSide>(msg.side)}))
+                } else if constexpr (std::is_same_v<RealType, ITCH::OrderExecutedMessage> || std::is_same_v<RealType, ITCH::OrderExecutedWithPriceMessage>) {
                     ++messages_processed;
-                    RecordOperationLambda ([&] {
-                        Order order = book.getOrder(msg.order_reference_number);
-                        if (order.getQuantity() > msg.executed_shares) {
-                            book.modifyOrder(msg.order_reference_number, order.getQuantity() - msg.executed_shares, order.getPrice());
-                        } else {
-                            book.cancelOrder(msg.order_reference_number);
-                        }
-                    })
-                } else if constexpr (std::is_same_v<RealType, ITCH::OrderExecutedWithPriceMessage>) {
-                    ++messages_processed;
-                    RecordOperationLambda([&] {
-                        Order order = book.getOrder(msg.order_reference_number);
-                        if (order.getQuantity() > msg.shares) {
-                            book.modifyOrder(msg.order_reference_number, order.getQuantity() - msg.shares, order.getPrice());
-                        } else {
-                            book.cancelOrder(msg.order_reference_number);
-                        }
-                    })
+                    RecordOperation(book.reduceExecutedOrder(msg.order_reference_number, msg.executed_shares))
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderReplaceMessage>) {
                     ++messages_processed;
-                    RecordOperationLambda([&] {
-                        Order old_order = book.getOrder(msg.original_order_reference_number);
-                        book.cancelOrder(old_order.getId());
-                        Order new_order{msg.new_order_reference_number, OrderType::Limit, msg.new_quantity, static_cast<Price>(msg.new_price), old_order.getSide()};
-                        book.addOrder(new_order);
-                    })
+                    RecordOperation(book.replaceOrder(msg.original_order_reference_number, msg.new_order_reference_number, msg.new_quantity, static_cast<Price>(msg.new_price)));
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderDeleteMessage>) {
                     ++messages_processed;
-                    RecordOperationLambda([&] {
-                        book.cancelOrder(msg.order_reference_number);
-                    })
+                    RecordOperation(book.cancelOrder(msg.order_reference_number))
                 } else if constexpr (std::is_same_v<RealType, ITCH::OrderCancelMessage>) {
                     ++messages_processed;
-                    RecordOperationLambda([&] {
-                        Order order = book.getOrder(msg.order_reference_number);
-                        if (order.getQuantity() > msg.cancelled_shares) {
-                            book.modifyOrder(msg.order_reference_number, order.getQuantity() - msg.cancelled_shares, order.getPrice());
-                        } else {
-                            book.cancelOrder(msg.order_reference_number);
-                        }
-                    })
+                    RecordOperation(book.reduceExecutedOrder(msg.order_reference_number, msg.cancelled_shares))
                 }
                 // skip other types
             }, msg_variant);
@@ -98,6 +110,19 @@ int main(int argc, char** argv) {
     if (parsed_itch_for_stock.empty()) {
         std::println("Parsed itch file to an empty vector");
         return 2;
+    }
+
+    for (int i{2}; i < argc; i++) {
+        if (std::strcmp(argv[i], "--perf-record") == 0) {
+            std::println("Running with perf");
+            runPerf(true);
+            break;
+        }
+        if (std::strcmp(argv[i], "--perf-stat") == 0) {
+            std::println("Running with perf");
+            runPerf(false);
+            break;
+        }
     }
 
     benchmark::RunSpecifiedBenchmarks();

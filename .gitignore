@@ -5,3 +5,5 @@ cmake-build-relwithdebinfo/
 build
 CMakeUserPresets.json
 cache
+perf.data
+perf_report.txt

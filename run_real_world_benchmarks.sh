@@ -21,5 +21,5 @@ fi
 
 
 sudo cpupower frequency-set --governor performance 2>&1 > /dev/null
-sudo taskset -c 3 chrt -f 99 ./cmake-build-release/RealWorldDataOrderBookBenchmark ./cache/${test_ticker}.itch
+sudo env LD_PRELOAD=${LD_PRELOAD} MALLOC_CONF=${MALLOC_CONF} taskset -c 3 chrt -f 99 ./cmake-build-release/RealWorldDataOrderBookBenchmark ./cache/${test_ticker}.itch "${@:2}"
 sudo cpupower frequency-set --governor powersave 2>&1 > /dev/null

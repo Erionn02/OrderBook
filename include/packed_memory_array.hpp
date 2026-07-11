@@ -273,7 +273,7 @@ public:
     }
 
     iterator erase(iterator it) {
-        if (it == end()) {
+        [[unlikely]] if (it == end()) {
             return end();
         }
         std::size_t idx = it.idx;

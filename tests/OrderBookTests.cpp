@@ -254,7 +254,7 @@ TEST_F(OrderBookTests, modifyLimitOrderTest) {
     ASSERT_EQ(order_book.getOrder(buyOrder1.getId()).getPrice(), Price{456});
 }
 
-TEST_F(OrderBookTests, modifyLimitOrderGoesToTheEndOfPriceLevelQueueFifo) {
+TEST_F(OrderBookTests, modifyLimitOrderGoesToTheEndOfPriceLevelQueueWhenModifiedQuantityIsBigger) {
     Order buyOrder1{OrderId{1}, OrderType::Limit, Quantity{100}, Price{250}, TradeSide::Buy};
     Order buyOrder2{OrderId{2}, OrderType::Limit, Quantity{20}, Price{250}, TradeSide::Buy};
     Order buyOrder3{OrderId{3}, OrderType::Limit, Quantity{40}, Price{250}, TradeSide::Buy};
@@ -264,7 +264,7 @@ TEST_F(OrderBookTests, modifyLimitOrderGoesToTheEndOfPriceLevelQueueFifo) {
     order_book.addOrder(buyOrder1);
     order_book.addOrder(buyOrder2);
     order_book.addOrder(buyOrder3);
-    order_book.modifyOrder(buyOrder1.getId(), Quantity{30}, buyOrder1.getPrice());
+    order_book.modifyOrder(buyOrder1.getId(), Quantity{130}, buyOrder1.getPrice());
     auto trades = order_book.addOrder(sellOrder);
 
     ASSERT_EQ(trades.size(), 2);
@@ -277,6 +277,57 @@ TEST_F(OrderBookTests, modifyLimitOrderGoesToTheEndOfPriceLevelQueueFifo) {
     ASSERT_EQ(order_book.getOrdersCount(), 2);
 }
 
+TEST_F(OrderBookTests, modifyLimitOrderStaysOnTheSamePositionWhenModifiedQuantityIsLower) {
+    Order buyOrder1{OrderId{1}, OrderType::Limit, Quantity{100}, Price{250}, TradeSide::Buy};
+    Order buyOrder2{OrderId{2}, OrderType::Limit, Quantity{20}, Price{250}, TradeSide::Buy};
+    Order buyOrder3{OrderId{3}, OrderType::Limit, Quantity{40}, Price{250}, TradeSide::Buy};
+
+    Order sellOrder{OrderId{4}, OrderType::Limit, Quantity{40}, Price{200}, TradeSide::Sell};
+
+    order_book.addOrder(buyOrder1);
+    order_book.addOrder(buyOrder2);
+    order_book.addOrder(buyOrder3);
+    order_book.modifyOrder(buyOrder1.getId(), Quantity{30}, buyOrder1.getPrice());
+    auto trades = order_book.addOrder(sellOrder);
+
+    ASSERT_EQ(trades.size(), 2);
+    EXPECT_EQ(trades[0].quantity, 30);
+    EXPECT_EQ(trades[0].order_id_b, buyOrder1.getId());
+    EXPECT_EQ(trades[1].quantity, 10);
+    EXPECT_EQ(trades[1].order_id_b, buyOrder2.getId());
+
+    EXPECT_EQ(order_book.getOrder(buyOrder2.getId()).getFilled(), 10);
+    ASSERT_EQ(order_book.getOrdersCount(), 2);
+}
+
+TEST_F(OrderBookTests, recudeExecutedOrder) {
+    Order order{OrderId{1}, OrderType::Limit, Quantity{100}, Price{250}, TradeSide::Buy};
+
+    order_book.addOrder(order);
+    order_book.reduceExecutedOrder(order.getId(), 40);
+    ASSERT_EQ(order_book.getOrder(order.getId()).getQuantity(), 60);
+    order_book.reduceExecutedOrder(order.getId(), 40);
+    ASSERT_EQ(order_book.getOrder(order.getId()).getQuantity(), 20);
+    order_book.reduceExecutedOrder(order.getId(), 20);
+    ASSERT_EQ(order_book.getOrdersCount(), 0);
+}
+
+TEST_F(OrderBookTests, recudeExecutedOrderDoesNotCrashWhenReducesNonExistentOrder) {
+    ASSERT_NO_THROW(order_book.reduceExecutedOrder(2137, 40));
+}
+
+TEST_F(OrderBookTests, replaceOrder) {
+    Order order1{OrderId{1}, OrderType::Limit, Quantity{100}, Price{250}, TradeSide::Buy};
+    Order order2{OrderId{2}, OrderType::Limit, Quantity{150}, Price{350}, TradeSide::Buy};
+    order_book.addOrder(order1);
+    order_book.replaceOrder(order1.getId(), order2.getId(), order2.getQuantity(), order2.getPrice());
+    ASSERT_EQ(order_book.getOrdersCount(), 1);
+    ASSERT_EQ(order_book.getOrder(order2.getId()), order2);
+}
+
+TEST_F(OrderBookTests, replaceOrderDoesNotCrashWhenReplacingNonExistentOrder) {
+    ASSERT_NO_THROW(order_book.replaceOrder(1,2,3,4));
+}
 
 TEST_F(OrderBookTests, FillOrKillDoesNotGetFilledWhenNotEnoughQuantity) {
     order_book.addOrder({OrderId{1}, OrderType::Limit, Quantity{100}, Price{250}, TradeSide::Buy});

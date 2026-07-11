@@ -58,7 +58,6 @@ std::vector<ITCH::Message> parsed_itch_for_stock{};
 template<bool record_latency>
 static void BM_MixedStreamRealWorldData(benchmark::State &state) {
     std::size_t messages_processed{0};
-    std::size_t crosses{0};
     LatencyRecorder latency_recorder;
     for (auto _: state) {
         OrderBook book{};

@@ -119,17 +119,12 @@ static void BM_MixedStream(benchmark::State &state) {
     for (auto _: state) {
         OrderBook book{};
         for (const auto &ev: events) {
-            // switch turns out to be faster than ev.visit(overloads{...})
-            switch (ev.index()) {
-                case 0:
-                    RecordOperation(benchmark::DoNotOptimize(book.addOrder(std::get<AddEvent>(ev).order)));
-                    break;
-                case 1:
-                    RecordOperation(book.modifyOrder(std::get<ModifyEvent>(ev).targetId, std::get<ModifyEvent>(ev).new_qty, std::get<ModifyEvent>(ev).new_price));
-                    break;
-                case 2:
-                    RecordOperation(book.cancelOrder(std::get<CancelEvent>(ev).targetId));
-                    break;
+            if (auto event = std::get_if<AddEvent>(&ev)) {
+                RecordOperation(benchmark::DoNotOptimize(book.addOrder(event->order)));
+            } else if (auto event = std::get_if<ModifyEvent>(&ev)) {
+                RecordOperation(book.modifyOrder(event->targetId, event->new_qty, event->new_price));
+            } else {
+                RecordOperation(book.cancelOrder(std::get<CancelEvent>(ev).targetId));
             }
         }
     }

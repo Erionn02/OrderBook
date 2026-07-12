@@ -62,12 +62,12 @@ private:
                                    [[maybe_unused]] ToInsertMap& to_insert_map) {
         std::vector<Trade> trades;
         for (auto it = order_map.begin(); it != order_map.end();) {
-            auto& level = **it;
             if constexpr (order_type == OrderType::Limit || order_type == OrderType::ImmediateOrCancel) {
-                if (price_comparator(order.getPrice(), level.price)) {
+                if (price_comparator(order.getPrice(), it.key())) {
                     break;
                 }
             }
+            auto& level = **it;
             auto existing_order_it = level.orders.begin();
             while (existing_order_it != level.orders.end() && !order.isFilled()) {
                 Quantity filled = existing_order_it->fill(order);

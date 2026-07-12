@@ -32,17 +32,16 @@ PriceLevel* OrderBook::allocatePriceLevel(Price price) {
 
 void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
     auto [orderIt, level] = it->second;
-    if (orderIt->getSide() == TradeSide::Buy) {
-        level->orders.erase(orderIt);
-        [[unlikely]] if (level->orders.empty()) {
-            price_level_cache.push_back(level);
+    auto side = orderIt->getSide();
+    level->orders.erase(orderIt);
+
+    [[unlikely]]
+    if (level->orders.empty()) {
+        price_level_cache.push_back(level);
+        if (side == TradeSide::Buy) {
             using itType = std::remove_cvref_t<decltype(bids)>::iterator;
             bids.erase(itType(&bids, level->idx));
-        }
-    } else {
-        level->orders.erase(orderIt);
-        [[unlikely]] if (level->orders.empty()) {
-            price_level_cache.push_back(level);
+        } else {
             using itType = std::remove_cvref_t<decltype(asks)>::iterator;
             asks.erase(itType(&asks, level->idx));
         }

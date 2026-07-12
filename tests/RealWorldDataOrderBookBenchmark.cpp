@@ -62,26 +62,28 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
     for (auto _: state) {
         OrderBook book{};
         for (const ITCH::Message &msg_variant: parsed_itch_for_stock) {
-            std::visit([&]<typename T>(T && msg) {
-                using RealType = std::remove_cvref_t<T>;
-                if constexpr (std::is_same_v<RealType, ITCH::AddOrderMessage> || std::is_same_v<RealType, ITCH::AddOrderMPIDAttributionMessage>) {
-                    ++messages_processed;
-                    RecordOperation(book.addOrder(Order{msg.order_reference_number, OrderType::Limit, msg.shares, static_cast<Price>(msg.price), std::bit_cast<TradeSide>(msg.side)}))
-                } else if constexpr (std::is_same_v<RealType, ITCH::OrderExecutedMessage> || std::is_same_v<RealType, ITCH::OrderExecutedWithPriceMessage>) {
-                    ++messages_processed;
-                    RecordOperation(book.reduceExecutedOrder(msg.order_reference_number, msg.executed_shares))
-                } else if constexpr (std::is_same_v<RealType, ITCH::OrderReplaceMessage>) {
-                    ++messages_processed;
-                    RecordOperation(book.replaceOrder(msg.original_order_reference_number, msg.new_order_reference_number, msg.new_quantity, static_cast<Price>(msg.new_price)));
-                } else if constexpr (std::is_same_v<RealType, ITCH::OrderDeleteMessage>) {
-                    ++messages_processed;
-                    RecordOperation(book.cancelOrder(msg.order_reference_number))
-                } else if constexpr (std::is_same_v<RealType, ITCH::OrderCancelMessage>) {
-                    ++messages_processed;
-                    RecordOperation(book.reduceExecutedOrder(msg.order_reference_number, msg.cancelled_shares))
-                }
-                // skip other types
-            }, msg_variant);
+            if (auto* msg = std::get_if<ITCH::AddOrderMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.addOrder(Order{msg->order_reference_number, OrderType::Limit, msg->shares, static_cast<Price>(msg->price), std::bit_cast<TradeSide>(msg->side)}))
+            } else if (auto* msg = std::get_if<ITCH::AddOrderMPIDAttributionMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.addOrder(Order{msg->order_reference_number, OrderType::Limit, msg->shares, static_cast<Price>(msg->price), std::bit_cast<TradeSide>(msg->side)}))
+            } else if (auto* msg = std::get_if<ITCH::OrderExecutedMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.reduceExecutedOrder(msg->order_reference_number, msg->executed_shares))
+            } else if (auto* msg = std::get_if<ITCH::OrderExecutedWithPriceMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.reduceExecutedOrder(msg->order_reference_number, msg->executed_shares))
+            } else if (auto* msg = std::get_if<ITCH::OrderExecutedWithPriceMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.reduceExecutedOrder(msg->order_reference_number, msg->executed_shares))
+            } else if (auto* msg = std::get_if<ITCH::OrderDeleteMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.cancelOrder(msg->order_reference_number))
+            } else if (auto* msg = std::get_if<ITCH::OrderCancelMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.reduceExecutedOrder(msg->order_reference_number, msg->cancelled_shares))
+            }
         }
     }
 

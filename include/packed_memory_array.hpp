@@ -70,6 +70,10 @@ public:
             return &cont->values[idx];
         }
 
+        const container::key_t & key() const {
+            return cont->keys[idx];
+        }
+
         basic_iterator& operator++() {
             idx = cont->get_next_live(idx);
             return *this;

@@ -6,4 +6,5 @@ build
 CMakeUserPresets.json
 cache
 perf.data
+perf.data.old
 perf_report.txt

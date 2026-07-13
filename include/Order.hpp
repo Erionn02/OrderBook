@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-struct Order {
+struct alignas(32) Order {
     Order() = default;
 
     Order(OrderId id, OrderType type, Quantity quantity, Price price, TradeSide side) : id(id),

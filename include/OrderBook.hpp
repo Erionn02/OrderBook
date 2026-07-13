@@ -12,8 +12,12 @@
 
 class OrderBook {
 public:
-    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15))) {
+    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15)), std::size_t price_levels_reserve = 8192) {
         orders.reserve(orders_reserve);
+        price_level_cache.reserve(price_levels_reserve);
+        for (std::size_t i{0}; i < price_levels_reserve; ++i) {
+            price_level_cache.push_back(&price_level_source.emplace_back());
+        }
     }
     OrderBook(const OrderBook&) = delete;
     OrderBook& operator=(const OrderBook&) = delete;

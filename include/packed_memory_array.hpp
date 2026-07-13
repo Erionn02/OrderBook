@@ -405,20 +405,16 @@ private:
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
                 for (std::size_t idx = start; idx < start + count; ++idx) {
-                    if (test_bit(idx)) {
-                        std::size_t next = idx + 1;
-                        hook(values[idx], next);
-                    }
+                    std::size_t next = idx + 1;
+                    hook(values[idx], next);
                 }
             }
             std::memmove(&values[start] + 1, &values[start], count * sizeof(value_t));
         } else {
             for (std::size_t idx = start + count; idx > start; --idx) {
                 std::size_t prev = idx - 1;
-                if (test_bit(prev)) {
-                    hook(values[prev], idx);
-                    move_value(values + idx, prev);
-                }
+                hook(values[prev], idx);
+                move_value(values + idx, prev);
             }
         }
         set_occupied(start + count);
@@ -433,20 +429,16 @@ private:
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
                 for (std::size_t idx = start; idx < start + count; ++idx) {
-                    if (test_bit(idx)) {
-                        std::size_t prev = idx - 1;
-                        hook(values[idx], prev);
-                    }
+                    std::size_t prev = idx - 1;
+                    hook(values[idx], prev);
                 }
             }
             std::memmove(&values[start - 1], &values[start], count * sizeof(value_t));
         } else {
             for (std::size_t idx = start; idx < start + count; ++idx) {
                 std::size_t prev = idx - 1;
-                if (test_bit(idx)) {
-                    hook(values[idx], prev);
-                    move_value(values + prev, idx);
-                }
+                hook(values[idx], prev);
+                move_value(values + prev, idx);
             }
         }
 

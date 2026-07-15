@@ -6,10 +6,9 @@
 #include <vector>
 #include <ranges>
 
-static std::pair<OrderBook, std::vector<OrderId>> buildPopulatedBook(std::size_t n) {
+static std::tuple<OrderBook, std::vector<Order>, std::vector<OrderId>> buildPopulatedBook(std::size_t n, RealisticGenerator& gen) {
     static std::map<std::size_t, std::vector<Order>> cache{};
     if (!cache.contains(n)) {
-        RealisticGenerator gen{};
         cache[n] = gen.generateOrders(n, OrderType::Limit);
     }
     OrderBook book{};
@@ -19,7 +18,16 @@ static std::pair<OrderBook, std::vector<OrderId>> buildPopulatedBook(std::size_t
     auto ids = book.getOrders() | std::views::keys | std::ranges::to<std::vector>();
     std::mt19937_64 rng(n);
     std::ranges::shuffle(ids, rng);
-    return {std::move(book), std::move(ids)};
+    auto live_orders = book.getOrders() | std::views::values | std::views::keys | std::views::transform([](auto&& it) -> decltype(auto) {
+                           return *it;
+                       })
+                       | std::ranges::to<std::vector>();
+    return {std::move(book), std::move(live_orders), std::move(ids)};
+}
+
+static std::tuple<OrderBook, std::vector<Order>, std::vector<OrderId>> buildPopulatedBook(std::size_t n) {
+    RealisticGenerator gen{};
+    return buildPopulatedBook(n, gen);
 }
 
 template<bool record_latency>
@@ -58,7 +66,7 @@ static void BM_CancelOrder(benchmark::State &state) {
 
     for (auto _: state) {
         state.PauseTiming();
-        auto [book, ids] = buildPopulatedBook(n);
+        auto [book, _, ids] = buildPopulatedBook(n);
         state.ResumeTiming();
 
         for (OrderId id: ids) {
@@ -84,7 +92,7 @@ static void BM_ModifyOrder(benchmark::State &state) {
     std::size_t total_processed{0};
     for (auto _: state) {
         state.PauseTiming();
-        auto [book, live_ids] = buildPopulatedBook(n);
+        auto [book, _, live_ids] = buildPopulatedBook(n);
         total_processed += live_ids.size();
         RealisticGenerator gen{};
         std::vector<std::tuple<OrderId, Quantity, Price> > mods;
@@ -138,5 +146,76 @@ static void BM_MixedStream(benchmark::State &state) {
 
 BENCHMARK(BM_MixedStream<false>)->Arg(1'000'000)->Unit(benchmark::kSecond)->Name("BM_MixedStream");
 BENCHMARK(BM_MixedStream<true>)->Arg(1'000'000)->Unit(benchmark::kSecond)->Name("BM_MixedStreamLatency");
+
+
+template<bool record_latency>
+static void BM_ReplaceOrder(benchmark::State &state) {
+    const std::size_t n = static_cast<std::size_t>(state.range(0));
+    LatencyRecorder latency_recorder;
+    MarketParams deep_params{.cancel_rate = 0, .modify_rate = 0};
+
+    for (auto _: state) {
+        state.PauseTiming();
+
+        RealisticGenerator gen(42, deep_params);
+        auto [book, live_orders, _] = buildPopulatedBook(n, gen);
+        auto new_orders = gen.generateOrders(live_orders.size());
+        state.ResumeTiming();
+        for (const auto &[old_order, new_order]: std::views::zip(live_orders, new_orders)) {
+            RecordOperation(benchmark::DoNotOptimize(book.replaceOrder(old_order.getId(), new_order.getId(), new_order.getQuantity(), new_order.getPrice())));
+        }
+    }
+
+    if constexpr (record_latency) {
+        reportLatency(state, latency_recorder);
+    } else {
+        state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+    }
+}
+
+BENCHMARK(BM_ReplaceOrder<false>)->RangeMultiplier(10)->Range(100'000, 10'000'000)->Unit(benchmark::kSecond)->Name("BM_ReplaceOrder");
+BENCHMARK(BM_ReplaceOrder<true>)->Arg(10'000'000)->Unit(benchmark::kSecond)->Name("BM_ReplaceOrderLatency");
+
+template<bool record_latency>
+static void BM_ReduceExecutedOrder(benchmark::State &state) {
+    const std::size_t n = static_cast<std::size_t>(state.range(0));
+    LatencyRecorder latency_recorder;
+    MarketParams deep_params{.cancel_rate = 0, .modify_rate = 0};
+
+    std::mt19937_64 rng{2137};
+    double order_fills_after_reduction_probability{0.3};
+    std::bernoulli_distribution distribution{order_fills_after_reduction_probability};
+    auto shouldOrderFill = [&] { return distribution(rng); };
+    std::int64_t total_processed{0};
+    for (auto _: state) {
+        state.PauseTiming();
+        auto [book, live_orders, _] = buildPopulatedBook(n);
+
+        total_processed += static_cast<std::int64_t>(live_orders.size());
+        std::vector<std::pair<OrderId, Quantity>> reductions{};
+        reductions.reserve(live_orders.size());
+        for (auto order : live_orders) {
+            if (shouldOrderFill()) {
+                reductions.emplace_back(order.getId(), order.getQuantity());
+            } else {
+                reductions.emplace_back(order.getId(), order.getQuantity() / 2);
+            }
+        }
+
+        state.ResumeTiming();
+        for (const auto &[order_id, reduced_quantity]: reductions) {
+            RecordOperation(book.reduceExecutedOrder(order_id, reduced_quantity));
+        }
+    }
+
+    if constexpr (record_latency) {
+        reportLatency(state, latency_recorder);
+    } else {
+        state.SetItemsProcessed(total_processed);
+    }
+}
+
+BENCHMARK(BM_ReduceExecutedOrder<false>)->RangeMultiplier(10)->Range(100'000, 10'000'000)->Unit(benchmark::kSecond)->Name("BM_ReduceExecutedOrder");
+BENCHMARK(BM_ReduceExecutedOrder<true>)->Arg(10'000'000)->Unit(benchmark::kSecond)->Name("BM_ReduceExecutedOrderLatency");
 
 BENCHMARK_MAIN();

@@ -22,7 +22,7 @@ static std::tuple<OrderBook, std::vector<Order>, std::vector<OrderId>> buildPopu
                            return *it;
                        })
                        | std::ranges::to<std::vector>();
-    return {std::move(book), live_orders, std::move(ids)};
+    return {std::move(book), std::move(live_orders), std::move(ids)};
 }
 
 static std::tuple<OrderBook, std::vector<Order>, std::vector<OrderId>> buildPopulatedBook(std::size_t n) {

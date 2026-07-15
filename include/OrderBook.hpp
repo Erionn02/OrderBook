@@ -14,6 +14,11 @@ class OrderBook {
 public:
     OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15)), std::size_t price_levels_reserve = 8192) {
         orders.reserve(orders_reserve);
+        orders_cache.reserve(orders_reserve);
+        for (std::size_t i = 0; i < orders_reserve; ++i) {
+            orders_cache.push_back(&orders_source.emplace_back());
+        }
+
         price_level_cache.reserve(price_levels_reserve);
         for (std::size_t i{0}; i < price_levels_reserve; ++i) {
             price_level_cache.push_back(&price_level_source.emplace_back());
@@ -24,7 +29,7 @@ public:
     OrderBook(OrderBook&&) = default;
     OrderBook& operator=(OrderBook&&) = default;
 
-    std::vector<Trade> addOrder(Order order);
+    std::vector<Trade> addOrder(const Order& order);
     void cancelOrder(OrderId orderId);
     std::vector<Trade> modifyOrder(OrderId orderId, Quantity quantity, Price price);
     std::vector<Trade> replaceOrder(OrderId oldOrderId, OrderId newOrderId, Quantity quantity, Price price);
@@ -36,6 +41,8 @@ public:
     const auto& getBids() const { return bids; }
     const auto& getAsks() const { return asks; }
 private:
+    [[gnu::always_inline]] inline std::vector<Trade> addOrderInternal(Order& intrusive_order);
+    Order& getIntrusiveOrder(const Order& other);
     PriceLevel *allocatePriceLevel(Price price);
 
     using OrderHashMap = boost::unordered_flat_map<OrderId, std::pair<decltype(PriceLevel::orders)::iterator, PriceLevel*>>;
@@ -79,6 +86,7 @@ private:
                                     existing_order_it->getPrice(), filled);
                 if (existing_order_it->isFilled()) {
                     orders.erase(existing_order_it->getId());
+                    orders_cache.push_back(&*existing_order_it);
                     existing_order_it = level.orders.erase(existing_order_it);
                 } else {
                     ++existing_order_it;
@@ -121,8 +129,6 @@ private:
         return false;
     }
 
-    std::vector<PriceLevel*> price_level_cache{};
-    std::deque<PriceLevel> price_level_source{};
 
     struct UpdateIdxHook {
         void operator()(PriceLevel* level, std::size_t idx) {
@@ -132,6 +138,9 @@ private:
 
     packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook> bids{};
     packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook> asks{};
-
+    std::vector<Order*> orders_cache{};
+    std::deque<Order> orders_source{};
+    std::vector<PriceLevel*> price_level_cache{};
+    std::deque<PriceLevel> price_level_source{};
     OrderHashMap orders{};
 };

@@ -1,14 +1,19 @@
 #include "OrderBook.hpp"
 
 
-std::vector<Trade> OrderBook::addOrder(Order order) {
+std::vector<Trade> OrderBook::addOrder(const Order& order) {
     if (orders.contains(order.getId())) {
         return {};
     }
-    if (order.getSide() == TradeSide::Buy) {
-        return addOrderImpl(order, std::less<Price>{}, asks, bids);
+    Order& intrusive_order = getIntrusiveOrder(order);
+    return addOrderInternal(intrusive_order);
+}
+
+std::vector<Trade> OrderBook::addOrderInternal(Order& intrusive_order) {
+    if (intrusive_order.getSide() == TradeSide::Buy) {
+        return addOrderImpl(intrusive_order, std::less<Price>{}, asks, bids);
     }
-    return addOrderImpl(order, std::greater<Price>{}, bids, asks);
+    return addOrderImpl(intrusive_order, std::greater<Price>{}, bids, asks);
 }
 
 void OrderBook::cancelOrder(OrderId orderId) {
@@ -16,6 +21,15 @@ void OrderBook::cancelOrder(OrderId orderId) {
     [[likely]] if (it != orders.end()) {
         cancelOrderInternal(it);
     }
+}
+
+Order& OrderBook::getIntrusiveOrder(const Order& other) {
+    if (!orders_cache.empty()) {
+        auto last = orders_cache.back();
+        orders_cache.pop_back();
+        return *last = other;
+    }
+    return orders_source.emplace_back(other);
 }
 
 PriceLevel* OrderBook::allocatePriceLevel(Price price) {
@@ -33,6 +47,7 @@ PriceLevel* OrderBook::allocatePriceLevel(Price price) {
 void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
     auto [orderIt, level] = it->second;
     auto side = orderIt->getSide();
+    orders_cache.push_back(&*orderIt);
     level->orders.erase(orderIt);
 
     [[unlikely]]
@@ -54,20 +69,21 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId orderId, Quantity quantity, Pr
     [[unlikely]] if (it == orders.end()) {
         return {};
     }
-    auto [orderIt, level] = it->second;
+    auto &[orderIt, level] = it->second;
     Order& oldOrder = *orderIt;
     Order newOrder{orderId, oldOrder.getType(), quantity, price, oldOrder.getSide()};
     if (price == oldOrder.getPrice()) {
         if (quantity > oldOrder.getQuantity()) {
-            level->orders.erase(it->second.first);
-            it->second.first = level->orders.insert(level->orders.end(), newOrder);
+            level->orders.erase(orderIt);
+            oldOrder = newOrder;
+            orderIt = level->orders.insert(level->orders.end(), oldOrder);
         } else {
             oldOrder = newOrder;
         }
         return {};
     }
     cancelOrderInternal(it);
-    return addOrder(newOrder);
+    return addOrderInternal(getIntrusiveOrder(newOrder));
 }
 
 std::vector<Trade> OrderBook::replaceOrder(OrderId oldOrderId, OrderId newOrderId, Quantity quantity, Price price) {
@@ -77,7 +93,7 @@ std::vector<Trade> OrderBook::replaceOrder(OrderId oldOrderId, OrderId newOrderI
     }
     Order newOrder{newOrderId, it->second.first->getType(), quantity, price, it->second.first->getSide()};
     cancelOrderInternal(it);
-    return addOrder(newOrder);
+    return addOrderInternal(getIntrusiveOrder(newOrder));
 }
 
 void OrderBook::reduceExecutedOrder(OrderId orderId, Quantity reduced_quantity) {

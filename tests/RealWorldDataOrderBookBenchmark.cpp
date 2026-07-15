@@ -83,6 +83,9 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
             } else if (auto* msg = std::get_if<ITCH::OrderCancelMessage>(&msg_variant)) {
                 ++messages_processed;
                 RecordOperation(book.reduceExecutedOrder(msg->order_reference_number, msg->cancelled_shares))
+            } else if (auto* msg = std::get_if<ITCH::OrderReplaceMessage>(&msg_variant)) {
+                ++messages_processed;
+                RecordOperation(book.replaceOrder(msg->original_order_reference_number, msg->new_order_reference_number, msg->new_quantity, static_cast<Price>(msg->new_price)))
             }
         }
     }

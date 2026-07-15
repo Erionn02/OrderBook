@@ -2,11 +2,15 @@
 #include "BaseTypes.hpp"
 
 #include <algorithm>
+#include <utility>
+#include <boost/intrusive/list.hpp>
 
-struct alignas(32) Order {
+namespace bi = boost::intrusive;
+
+struct Order : bi::list_base_hook<bi::link_mode<bi::normal_link>> {
     Order() = default;
 
-    Order(OrderId id, OrderType type, Quantity quantity, Price price, TradeSide side) : id(id),
+    Order(OrderId id, OrderType type, Quantity quantity, Price price, TradeSide side) : list_base_hook(), id(id),
                                                                                         initialQuantity(quantity), quantity(quantity), price(price),
                                                                                         type(type), side(side) {
     }
@@ -56,7 +60,10 @@ struct alignas(32) Order {
         return side;
     }
 
-    bool operator==(const Order& other) const = default;
+    bool operator==(const Order& other) const {
+        return std::tie(id, initialQuantity, quantity, price, type, side) == std::tie(other.id, other.initialQuantity, other.quantity, other.price,
+                                                                                      other.type, other.side);
+    }
 
 private:
     OrderId id;

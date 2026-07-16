@@ -60,7 +60,9 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
     std::size_t messages_processed{0};
     LatencyRecorder latency_recorder;
     for (auto _: state) {
+        state.PauseTiming();
         OrderBook book{};
+        state.ResumeTiming();
         for (const ITCH::Message &msg_variant: parsed_itch_for_stock) {
             if (auto* msg = std::get_if<ITCH::AddOrderMessage>(&msg_variant)) {
                 ++messages_processed;
@@ -69,9 +71,6 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
                 ++messages_processed;
                 RecordOperation(book.addOrder(Order{msg->order_reference_number, OrderType::Limit, msg->shares, static_cast<Price>(msg->price), std::bit_cast<TradeSide>(msg->side)}))
             } else if (auto* msg = std::get_if<ITCH::OrderExecutedMessage>(&msg_variant)) {
-                ++messages_processed;
-                RecordOperation(book.reduceExecutedOrder(msg->order_reference_number, msg->executed_shares))
-            } else if (auto* msg = std::get_if<ITCH::OrderExecutedWithPriceMessage>(&msg_variant)) {
                 ++messages_processed;
                 RecordOperation(book.reduceExecutedOrder(msg->order_reference_number, msg->executed_shares))
             } else if (auto* msg = std::get_if<ITCH::OrderExecutedWithPriceMessage>(&msg_variant)) {

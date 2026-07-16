@@ -4,7 +4,8 @@ cmake-build-relwithdebinfo/
 .idea/
 build
 CMakeUserPresets.json
-cache
+cache/*
+!cache/AAPL.itch
 perf.data
 perf.data.old
 perf_report.txt

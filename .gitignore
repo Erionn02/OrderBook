@@ -6,6 +6,7 @@ build
 CMakeUserPresets.json
 cache/*
 !cache/AAPL.itch
+!cache/GOOG.itch
 perf.data
 perf.data.old
 perf_report.txt

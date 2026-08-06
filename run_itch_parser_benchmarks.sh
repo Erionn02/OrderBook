@@ -7,6 +7,6 @@ if [ ! -f ./cache/12302019.NASDAQ_ITCH50 ]; then
 fi
 
 
-sudo cpupower frequency-set --governor performance 2>&1 > /dev/null
+echo "performance" | sudo tee /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
 sudo taskset -c 3 chrt -f 99 ./cmake-build-release/ITCHParserBenchmark ./cache/12302019.NASDAQ_ITCH50
-sudo cpupower frequency-set --governor powersave 2>&1 > /dev/null
+echo "powersave" | sudo tee /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor

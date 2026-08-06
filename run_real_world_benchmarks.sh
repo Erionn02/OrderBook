@@ -19,7 +19,6 @@ if [ ! -f ./cache/${test_ticker}.itch ]; then
   ./cmake-build-release/apps/ExtractITCHPerTicker ./cache/12302019.NASDAQ_ITCH50 ${test_ticker} ./cache/${test_ticker}.itch
 fi
 
-
-sudo cpupower frequency-set --governor performance 2>&1 > /dev/null
+echo "performance" | sudo tee /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
 sudo env LD_PRELOAD=${LD_PRELOAD} MALLOC_CONF=${MALLOC_CONF} taskset -c 3 chrt -f 99 ./cmake-build-release/RealWorldDataOrderBookBenchmark ./cache/${test_ticker}.itch "${@:2}"
-sudo cpupower frequency-set --governor powersave 2>&1 > /dev/null
+echo "powersave" | sudo tee /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor

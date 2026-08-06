@@ -14,7 +14,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/CMakeHelpers.cmake)
 add_conan_lib(GTest)
 add_conan_lib(benchmark)
 add_conan_lib(asio)
-
+add_conan_lib(Boost)
 
 set(PGO_MODE "OFF" CACHE STRING "PGO_MODE: OFF, GENERATE, USE")
 

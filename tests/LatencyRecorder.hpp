@@ -6,19 +6,6 @@
 #include <x86intrin.h>
 
 
-inline double nanosecondsPerCycle() {
-    static const double ns_per_cycle = [] {
-        const auto t0 = std::chrono::steady_clock::now();
-        const std::uint64_t c0 = __rdtsc();
-        while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(20)) {
-        }
-        const std::uint64_t c1 = __rdtsc();
-        const auto t1 = std::chrono::steady_clock::now();
-        return std::chrono::duration<double, std::nano>(t1 - t0).count() / static_cast<double>(c1 - c0);
-    }();
-    return ns_per_cycle;
-}
-
 class LatencyRecorder {
 public:
     void record(std::uint64_t cycles) {
@@ -82,13 +69,31 @@ public:
     }
 
 private:
-    std::uint64_t cpuCyclesBegin() {
-        return __rdtsc();
+    static std::uint64_t cpuCyclesBegin() {
+        _mm_lfence();
+        std::uint64_t cycles = __rdtsc();
+        _mm_lfence();
+        return cycles;
     }
 
-    std::uint64_t cpuCyclesEnd() {
+    static std::uint64_t cpuCyclesEnd() {
         unsigned aux;
-        return __rdtscp(&aux);
+        std::uint64_t cycles = __rdtscp(&aux);
+        _mm_lfence();
+        return cycles;
+    }
+    
+    static double nanosecondsPerCycle() {
+        static const double ns_per_cycle = [] {
+            const auto t0 = std::chrono::steady_clock::now();
+            const std::uint64_t c0 = cpuCyclesBegin();
+            while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(20)) {
+            }
+            const std::uint64_t c1 = cpuCyclesEnd();
+            const auto t1 = std::chrono::steady_clock::now();
+            return std::chrono::duration<double, std::nano>(t1 - t0).count() / static_cast<double>(c1 - c0);
+        }();
+        return ns_per_cycle;
     }
 
     constexpr static std::size_t same_grid_point_gap{8};

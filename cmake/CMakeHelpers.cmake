@@ -38,6 +38,7 @@ function(set_link_options TARGET_NAME)
     target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_link_libraries(${TARGET_NAME} PUBLIC ${PROTO_GENERATED_LIB} ${CONAN_LIBS})
     target_compile_options(${TARGET_NAME} PRIVATE
+	    -O3 
             -Wno-unused-variable
             -Wno-maybe-uninitialized
             -Werror
@@ -60,6 +61,10 @@ function(set_link_options TARGET_NAME)
             -fno-pie
             -funroll-loops
             -march=native
+            -mtune=native
+#            -falign-functions=64
+#            -falign-loops=64
+#            -fno-plt
     )
     target_link_options(${TARGET_NAME} PRIVATE -no-pie)
     if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")

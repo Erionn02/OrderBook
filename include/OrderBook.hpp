@@ -12,7 +12,7 @@
 
 class OrderBook {
 public:
-    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15)), std::size_t price_levels_reserve = 8192) {
+    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15)), std::size_t price_levels_reserve = 8192): bids(1024), asks(1024) {
         orders.reserve(orders_reserve);
         orders_cache.reserve(orders_reserve);
         for (std::size_t i = 0; i < orders_reserve; ++i) {
@@ -131,13 +131,12 @@ private:
 
 
     struct UpdateIdxHook {
-        void operator()(PriceLevel* level, std::size_t idx) {
+        void operator()(PriceLevel* level, std::size_t idx) const noexcept {
             level->idx = idx;
         }
     };
-
-    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook> bids{};
-    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook> asks{};
+    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook, PMAMode::Rebalance> bids{};
+    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook, PMAMode::Rebalance> asks{};
     std::vector<Order*> orders_cache{};
     std::deque<Order> orders_source{};
     std::vector<PriceLevel*> price_level_cache{};

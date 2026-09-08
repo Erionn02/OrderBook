@@ -3,14 +3,9 @@ include(CMakePrintHelpers)
 function(package_add_test TESTNAME)
     cmake_parse_arguments(ARGS "" "" "SOURCES;DEPENDS" ${ARGN})
     add_executable(${TESTNAME} ${ARGS_SOURCES})
-    target_include_directories(${TESTNAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
-    target_link_libraries(
-            ${TESTNAME}
-            ${PROTO_GENERATED_LIB}
-            ${CONAN_LIBS}
-            ${CMAKE_DL_LIBS}
-            ${ARGS_DEPENDS}
-    )
+    target_include_directories(${TESTNAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    set_link_options(${TESTNAME})
+    target_link_libraries(${TESTNAME} PRIVATE ${ARGS_DEPENDS})
     gtest_discover_tests(${TESTNAME}
             WORKING_DIRECTORY ${PROJECT_DIR}
             PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_DIR}"
@@ -60,10 +55,19 @@ function(set_link_options TARGET_NAME)
             -fno-pie
             -funroll-loops
             -march=native
+            -mtune=native
+            -falign-functions=64
+            -fno-plt
     )
     target_link_options(${TARGET_NAME} PRIVATE -no-pie)
     if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
         target_compile_options(${TARGET_NAME} PRIVATE -fno-inline -march=x86-64-v3)
+    endif()
+    if (CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_compile_options(${TARGET_NAME} PRIVATE -O3)
+    endif()
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        target_compile_options(${TARGET_NAME} PRIVATE -O0 -g3)
     endif()
 endfunction()
 

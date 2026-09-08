@@ -18,7 +18,30 @@ struct NoOp {
     }
 };
 
-template<typename Key_, typename Value_, typename Compare = std::less<>, typename OnChangePosHook = NoOp>
+enum class PMAMode {
+    Rebalance,
+    NoRebalance
+};
+
+template <class T, std::size_t Align = 64>
+struct aligned_allocator {
+    static_assert(Align >= alignof(T) && (Align & (Align - 1)) == 0);
+    using value_type = T;
+
+    aligned_allocator() = default;
+    template <class U> constexpr aligned_allocator(const aligned_allocator<U, Align>&) noexcept {}
+
+    T* allocate(std::size_t n) {
+        return static_cast<T*>(::operator new(n * sizeof(T), std::align_val_t{Align}));
+    }
+    void deallocate(T* p, std::size_t) noexcept {
+        ::operator delete(p, std::align_val_t{Align});
+    }
+    template <class U> struct rebind { using other = aligned_allocator<U, Align>; };
+    bool operator==(const aligned_allocator&) const = default;
+};
+
+template<typename Key_, typename Value_, typename Compare = std::less<>, typename OnChangePosHook = NoOp, PMAMode mode = PMAMode::Rebalance>
 class packed_memory_array {
 public:
     static_assert(std::is_same_v<Compare, std::less<>> || std::is_same_v<Compare, std::greater<>>,
@@ -107,8 +130,11 @@ public:
         return std::is_same_v<Compare, std::less<>> ? std::numeric_limits<key_t>::max() : std::numeric_limits<key_t>::lowest();
     }
 
-    packed_memory_array() {
-        allocate(alloc_min_chunk);
+    packed_memory_array(std::size_t initial_capacity = alloc_min_chunk) {
+        if (std::popcount(initial_capacity) != 1 || initial_capacity < alloc_min_chunk) {
+            throw std::logic_error(std::format("Capacity in packed_memory_array has to be a power of two greater than {}!", alloc_min_chunk));
+        }
+        allocate(initial_capacity);
         restore_default_state();
     }
 
@@ -284,7 +310,7 @@ public:
         --size_;
         set_unoccupied(idx);
         if constexpr (!std::is_trivially_destructible_v<value_t>) {
-            std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
+            std::allocator_traits<aligned_allocator<value_t>>::destroy(values_allocator, &values[idx]);
         }
 
         std::size_t next_live = get_next_live(idx);
@@ -393,8 +419,8 @@ private:
     }
 
     void move_value(value_t* dst, std::size_t src) {
-        std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, dst, std::move(values[src]));
-        std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[src]);
+        std::allocator_traits<aligned_allocator<value_t>>::construct(values_allocator, dst, std::move(values[src]));
+        std::allocator_traits<aligned_allocator<value_t>>::destroy(values_allocator, &values[src]);
     }
 
     void shift_right(std::size_t start, std::size_t count) {
@@ -452,7 +478,7 @@ private:
         }
         if constexpr (!std::is_trivially_destructible_v<value_t>) {
             for (std::size_t idx = test_bit(0) ? 0 : get_next_live(0); idx != npos; idx = get_next_live(idx)) {
-                std::allocator_traits<std::allocator<value_t>>::destroy(values_allocator, &values[idx]);
+                std::allocator_traits<aligned_allocator<value_t>>::destroy(values_allocator, &values[idx]);
             }
         }
         keys_allocator.deallocate(keys, capacity_);
@@ -546,7 +572,7 @@ private:
     template<typename Val>
     std::pair<iterator, bool> insert_at(key_t key, Val&& value, std::size_t idx) {
         keys[idx] = key;
-        std::allocator_traits<std::allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
+        std::allocator_traits<aligned_allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
         set_occupied(idx);
         beg = std::min(idx,beg);
         if constexpr (!has_sentinel) {
@@ -563,9 +589,11 @@ private:
         }
         hook(values[idx], idx);
         ++size_;
-        if (--rebalance_countdown == 0) {
-            rebalance_countdown = rebalance_period;
-            idx = rebalance_after_insert(idx);
+        if constexpr (mode == PMAMode::Rebalance) {
+            if (--rebalance_countdown == 0) {
+                rebalance_countdown = rebalance_period;
+                idx = rebalance_after_insert(idx);
+            }
         }
         return {iterator{this, idx}, true};
     }
@@ -586,7 +614,7 @@ private:
         const key_t key{keys[idx]};
         const std::size_t height{static_cast<std::size_t>(std::countr_zero(used_fields.size()))};
         for (std::size_t level{1}; level <= height; ++level) {
-            const std::size_t level_window_width{static_cast<std::size_t>(std::pow(2, level))};
+            const std::size_t level_window_width{1uz << level};
             const std::size_t seg_lo{seg - seg % level_window_width};
             const std::size_t seg_hi{seg_lo + level_window_width};
             const std::size_t live{count_live_in_segments(seg_lo, seg_hi)};
@@ -789,6 +817,6 @@ private:
     std::size_t beg{npos};
     [[no_unique_address]] Compare compare{};
     [[no_unique_address]] OnChangePosHook hook{};
-    std::allocator<key_t> keys_allocator{};
-    std::allocator<value_t> values_allocator{};
+    [[no_unique_address]] aligned_allocator<key_t> keys_allocator{};
+    [[no_unique_address]] aligned_allocator<value_t> values_allocator{};
 };

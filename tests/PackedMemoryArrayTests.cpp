@@ -8,7 +8,11 @@
 #include <vector>
 #include <print>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wkeyword-macro"
 #define private public
+#pragma GCC diagnostic pop
+
 #include "packed_memory_array.hpp"
 
 using namespace ::testing;

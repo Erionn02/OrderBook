@@ -12,7 +12,7 @@
 
 class OrderBook {
 public:
-    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15)), std::size_t price_levels_reserve = 8192) {
+    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15)), std::size_t price_levels_reserve = 8192): bids(1024), asks(1024) {
         orders.reserve(orders_reserve);
         orders_cache.reserve(orders_reserve);
         for (std::size_t i = 0; i < orders_reserve; ++i) {
@@ -29,47 +29,64 @@ public:
     OrderBook(OrderBook&&) = default;
     OrderBook& operator=(OrderBook&&) = default;
 
-    std::vector<Trade> addOrder(const Order& order);
-    void cancelOrder(OrderId orderId);
-    std::vector<Trade> modifyOrder(OrderId orderId, Quantity quantity, Price price);
-    std::vector<Trade> replaceOrder(OrderId oldOrderId, OrderId newOrderId, Quantity quantity, Price price);
-    void reduceExecutedOrder(OrderId orderId, Quantity reduced_quantity);
+    [[gnu::flatten]] std::vector<Trade> addOrder(const Order& order);
+    [[gnu::flatten]] void cancelOrder(OrderId orderId);
+    [[gnu::flatten]] std::vector<Trade> modifyOrder(OrderId orderId, Quantity quantity, Price price);
+    [[gnu::flatten]] std::vector<Trade> replaceOrder(OrderId oldOrderId, OrderId newOrderId, Quantity quantity, Price price);
+    [[gnu::flatten]] void reduceExecutedOrder(OrderId orderId, Quantity reduced_quantity);
 
     std::size_t getOrdersCount() const;
     Order getOrder(OrderId orderId) const;
+    
+    int getBestBid() const {
+        return bids.empty() ? -1 : bids.begin().key();
+    }
+
+    int getBestAsk() const {
+        return asks.empty() ? -1 : asks.begin().key();
+    }
+
     const auto& getOrders() const { return orders; }
     const auto& getBids() const { return bids; }
     const auto& getAsks() const { return asks; }
 private:
-    [[gnu::always_inline]] inline std::vector<Trade> addOrderInternal(Order& intrusive_order);
-    Order& getIntrusiveOrder(const Order& other);
-    PriceLevel *allocatePriceLevel(Price price);
+    using OrderList = PriceLevel::OrderList;
+    using OrderHashMap = boost::unordered_flat_map<OrderId, Order*>;
 
-    using OrderHashMap = boost::unordered_flat_map<OrderId, std::pair<decltype(PriceLevel::orders)::iterator, PriceLevel*>>;
+    [[gnu::always_inline]] inline std::vector<Trade> addOrderInternal(Order& intrusive_order, OrderHashMap::iterator slot);
+    Order& getIntrusiveOrder(const Order& other);
+    PriceLevel* allocatePriceLevel(Price price);
+    PriceLevel* getPriceLevelOfLastOrder(Order& order);
 
     void cancelOrderInternal(OrderHashMap::iterator it);
 
     template<typename Comp, typename OrderMap, typename ToInsertMap>
-    std::vector<Trade> addOrderImpl(Order& order, Comp&& price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
+    std::vector<Trade> addOrderImpl(Order& order, OrderHashMap::iterator slot, Comp&& price_comparator, OrderMap& order_map, ToInsertMap& to_insert_map) {
         switch (order.getType()) {
             case OrderType::Limit:
-                return handleOrder<OrderType::Limit>(order, std::forward<Comp>(price_comparator), order_map, to_insert_map);
+                return handleOrder<OrderType::Limit>(order, slot, std::forward<Comp>(price_comparator), order_map, to_insert_map);
             case OrderType::Market:
-                return handleOrder<OrderType::Market>(order, std::forward<Comp>(price_comparator), order_map, to_insert_map);
+                return handleOrder<OrderType::Market>(order, slot, std::forward<Comp>(price_comparator), order_map, to_insert_map);
             case OrderType::ImmediateOrCancel:
-                return handleOrder<OrderType::ImmediateOrCancel>(order, std::forward<Comp>(price_comparator), order_map, to_insert_map);
+                return handleOrder<OrderType::ImmediateOrCancel>(order, slot, std::forward<Comp>(price_comparator), order_map, to_insert_map);
             case OrderType::FillOrKill:
                 if (canFillFillOrKillOrder(order, std::forward<Comp>(price_comparator), order_map)) {
-                    return handleOrder<OrderType::FillOrKill>(order, price_comparator, order_map, to_insert_map);
+                    return handleOrder<OrderType::FillOrKill>(order, slot, price_comparator, order_map, to_insert_map);
                 }
+                discardOrder(order, slot);
                 return {};
             default:
                 std::unreachable();
         }
     }
 
+    void discardOrder(Order& order, OrderHashMap::iterator slot) {
+        orders.erase(slot);
+        orders_cache.push_back(&order);
+    }
+
     template<OrderType order_type, typename Comp, typename OrderMap, typename ToInsertMap>
-    std::vector<Trade> handleOrder(Order& order, [[maybe_unused]] Comp&& price_comparator, OrderMap& order_map,
+    std::vector<Trade> handleOrder(Order& order, OrderHashMap::iterator slot, [[maybe_unused]] Comp&& price_comparator, OrderMap& order_map,
                                    [[maybe_unused]] ToInsertMap& to_insert_map) {
         std::vector<Trade> trades;
         for (auto it = order_map.begin(); it != order_map.end();) {
@@ -101,14 +118,19 @@ private:
             }
 
             if (order.isFilled()) {
-                return trades;
+                break;
             }
         }
         if constexpr (order_type == OrderType::Limit) {
-            auto [price_level_it, _] = to_insert_map.get_or_insert(order.getPrice(), [&] { return allocatePriceLevel(order.getPrice()); });
-            auto& levelOrders = (*price_level_it)->orders;
-            orders.emplace(order.getId(), std::pair{levelOrders.insert(levelOrders.end(), order), *price_level_it});
+            [[likely]] if (!order.isFilled()) {
+                auto [price_level_it, _] = to_insert_map.get_or_insert(order.getPrice(), [&] { return allocatePriceLevel(order.getPrice()); });
+                (*price_level_it)->orders.push_back(order);
+                slot->second = &order;
+                return trades;
+            }
         }
+
+        discardOrder(order, slot);
         return trades;
     }
 
@@ -131,16 +153,15 @@ private:
 
 
     struct UpdateIdxHook {
-        void operator()(PriceLevel* level, std::size_t idx) {
+        void operator()(PriceLevel* level, std::size_t idx) const noexcept {
             level->idx = idx;
         }
     };
-
-    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook> bids{};
-    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook> asks{};
+    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook, PMAMode::Rebalance> bids{};
+    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook, PMAMode::Rebalance> asks{};
     std::vector<Order*> orders_cache{};
-    std::deque<Order> orders_source{};
+    std::deque<Order, aligned_allocator<Order, 64>> orders_source{};
     std::vector<PriceLevel*> price_level_cache{};
-    std::deque<PriceLevel> price_level_source{};
+    std::deque<PriceLevel, aligned_allocator<PriceLevel, 32>> price_level_source{};
     OrderHashMap orders{};
 };

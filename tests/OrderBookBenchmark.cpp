@@ -18,8 +18,8 @@ static std::tuple<OrderBook, std::vector<Order>, std::vector<OrderId>> buildPopu
     auto ids = book.getOrders() | std::views::keys | std::ranges::to<std::vector>();
     std::mt19937_64 rng(n);
     std::ranges::shuffle(ids, rng);
-    auto live_orders = book.getOrders() | std::views::values | std::views::keys | std::views::transform([](auto&& it) -> decltype(auto) {
-                           return *it;
+    auto live_orders = book.getOrders() | std::views::values | std::views::transform([](const Order* order) -> const Order& {
+                           return *order;
                        })
                        | std::ranges::to<std::vector>();
     return {std::move(book), std::move(live_orders), std::move(ids)};

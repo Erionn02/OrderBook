@@ -21,5 +21,5 @@ fi
 
 echo "performance" | sudo tee /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
 sleep 1
-sudo env LD_LIBRARY_PATH=/opt/gcc-16.2.0-install/lib64 LD_PRELOAD=${LD_PRELOAD} MALLOC_CONF=${MALLOC_CONF} taskset -c 3 chrt -f 99 ./cmake-build-release/RealWorldDataOrderBookBenchmark ./cache/${test_ticker}.itch "${@:2}"
+sudo env LD_PRELOAD=${LD_PRELOAD} MALLOC_CONF=${MALLOC_CONF} taskset -c 3 chrt -f 99 ./cmake-build-release/RealWorldDataOrderBookBenchmark ./cache/${test_ticker}.itch "${@:2}"
 echo "powersave" | sudo tee /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor

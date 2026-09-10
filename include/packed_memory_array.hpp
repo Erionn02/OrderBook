@@ -148,6 +148,7 @@ public:
         capacity_ = std::exchange(other.capacity_, 0);
         size_ = std::exchange(other.size_, 0);
         beg = std::exchange(other.beg, npos);
+        end_ = std::exchange(other.end_, 0);
         rebalance_countdown = std::exchange(other.rebalance_countdown, rebalance_period);
         used_fields = std::move(other.used_fields);
         keys_allocator = std::move(other.keys_allocator);
@@ -161,6 +162,7 @@ public:
         capacity_ = std::exchange(other.capacity_, 0);
         size_ = std::exchange(other.size_, 0);
         beg = std::exchange(other.beg, npos);
+        end_ = std::exchange(other.end_, 0);
         rebalance_countdown = std::exchange(other.rebalance_countdown, rebalance_period);
         used_fields = std::move(other.used_fields);
         keys_allocator = std::move(other.keys_allocator);
@@ -314,12 +316,16 @@ public:
         }
 
         std::size_t next_live = get_next_live(idx);
-        if (idx == beg) {
+        const bool was_first = idx == beg;
+        if (was_first) {
             beg = next_live;
         }
         if constexpr (has_sentinel) {
-            [[unlikely]] if (idx == capacity_ - 1) {
-                keys[idx] = upper_sentinel();
+            [[unlikely]] if (size_ == 0) {
+                beg = npos;
+                end_ = 0;
+            } else [[unlikely]] if (idx == end_ || was_first) {
+                trim_live_range(idx, next_live, was_first);
             }
         } else {
             std::size_t prev_live = get_prev_live(idx);
@@ -358,6 +364,10 @@ private:
 
     std::size_t make_room_at(std::size_t idx) {
         static constexpr std::size_t DISTANCE_CHECK_OTHER{33};
+        if (idx != 0 && !test_bit(idx - 1)) {
+            return idx - 1;
+        }
+
         std::size_t right = get_next_gap(idx);
         std::size_t distance_to_right = right - idx;
         [[likely]] if (distance_to_right < DISTANCE_CHECK_OTHER) {
@@ -427,6 +437,9 @@ private:
         if (start <= beg) {
             ++beg;
         }
+        if (end_ >= start && end_ < start + count) {
+            ++end_;
+        }
         std::memmove(&keys[start] + 1, &keys[start], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
             if constexpr (!std::is_same_v<OnChangePosHook, NoOp>) {
@@ -450,6 +463,9 @@ private:
     void shift_left(std::size_t start, std::size_t count) {
         if (start <= beg) {
             --beg;
+        }
+        if (count != 0 && end_ == start + count - 1) {
+            --end_;
         }
         std::memmove(&keys[start - 1], &keys[start], count * sizeof(key_t));
         if constexpr (std::is_trivially_move_constructible_v<value_t>) {
@@ -519,6 +535,9 @@ private:
         if (beg != npos) {
             beg += offset;
         }
+        if (size_ != 0) {
+            end_ += offset;
+        }
         keys_allocator.deallocate(keys, capacity_);
         values_allocator.deallocate(values, capacity_);
 
@@ -550,6 +569,10 @@ private:
         if constexpr (std::is_arithmetic_v<key_t>) {
             std::size_t lo{0};
             std::size_t hi{capacity_};
+            [[likely]] if (size_ != 0 && end_ < capacity_) {
+                lo = beg;
+                hi = end_ + 1;
+            }
             while (hi - lo > simd_tail_width) {
                 std::size_t mid = (lo + hi) >> 1;
                 if (compare(keys[mid], key)) {
@@ -575,6 +598,8 @@ private:
         std::allocator_traits<aligned_allocator<value_t>>::construct(values_allocator, &values[idx], std::forward<value_t>(value));
         set_occupied(idx);
         beg = std::min(idx,beg);
+        end_ = (size_ == 0 || idx > end_) ? idx : end_;
+        // end_ = std::max(idx, end_);
         if constexpr (!has_sentinel) {
             const std::size_t start = get_prev_live(idx) + 1;
             std::size_t end{idx};
@@ -596,6 +621,17 @@ private:
             }
         }
         return {iterator{this, idx}, true};
+    }
+
+    [[gnu::noinline]] void trim_live_range(std::size_t idx, std::size_t next_live, bool was_first) requires has_sentinel {
+        if (idx == end_) {
+            const std::size_t prev_live = get_prev_live(idx);
+            fill_gap(prev_live + 1, idx + 1, upper_sentinel());
+            end_ = prev_live;
+        }
+        if (was_first) {
+            fill_gap(idx, next_live, lower_sentinel());
+        }
     }
 
     void fill_gap(std::size_t start, std::size_t end, key_t key) {
@@ -663,9 +699,8 @@ private:
         const std::size_t count{compact_left(low, high)};
         fan_out_evenly(low, high, count);
         restore_keys_to_monotonic(low, high);
-        if (beg >= low && beg < high) {
-            beg = low;
-        }
+        beg = get_first_live();
+        end_ = rightmost_live();
     }
 
     std::size_t compact_left(std::size_t low, std::size_t high) {
@@ -815,6 +850,7 @@ private:
     std::size_t capacity_{0};
     std::size_t rebalance_countdown{rebalance_period};
     std::size_t beg{npos};
+    std::size_t end_{0};
     [[no_unique_address]] Compare compare{};
     [[no_unique_address]] OnChangePosHook hook{};
     [[no_unique_address]] aligned_allocator<key_t> keys_allocator{};

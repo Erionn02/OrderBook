@@ -12,15 +12,15 @@
 
 class OrderBook {
 public:
-    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,15)), std::size_t price_levels_reserve = 8192): bids(1024), asks(1024) {
+    OrderBook(std::size_t orders_reserve = static_cast<std::size_t>(std::pow(2,16)), std::size_t price_levels_reserve = 8192): bids(price_levels_reserve), asks(price_levels_reserve) {
         orders.reserve(orders_reserve);
         orders_cache.reserve(orders_reserve);
         for (std::size_t i = 0; i < orders_reserve; ++i) {
             orders_cache.push_back(&orders_source.emplace_back());
         }
 
-        price_level_cache.reserve(price_levels_reserve);
-        for (std::size_t i{0}; i < price_levels_reserve; ++i) {
+        price_level_cache.reserve(price_levels_reserve*2);
+        for (std::size_t i{0}; i < price_levels_reserve*2; ++i) {
             price_level_cache.push_back(&price_level_source.emplace_back());
         }
     }
@@ -157,8 +157,8 @@ private:
             level->idx = idx;
         }
     };
-    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook, PMAMode::Rebalance> bids{};
-    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook, PMAMode::Rebalance> asks{};
+    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook, PMAMode::NoRebalance> bids{};
+    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook, PMAMode::NoRebalance> asks{};
     std::vector<Order*> orders_cache{};
     std::deque<Order, aligned_allocator<Order, 64>> orders_source{};
     std::vector<PriceLevel*> price_level_cache{};

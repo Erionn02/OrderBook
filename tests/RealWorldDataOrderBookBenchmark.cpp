@@ -7,7 +7,8 @@
 #include <print>
 #include <fcntl.h>
 #include <thread>
-
+#include <valgrind/callgrind.h>
+#include "NoAllocCheck.hpp"
 
 void runPerf(bool record) {
     pid_t parent_pid = getpid();
@@ -55,13 +56,16 @@ void runPerf(bool record) {
 std::vector<ITCH::Message> parsed_itch_for_stock{};
 
 
-template<bool record_latency>
+template<bool record_latency, bool check_no_alloc_after_init = false>
 static void BM_MixedStreamRealWorldData(benchmark::State &state) {
     std::size_t messages_processed{0};
     LatencyRecorder latency_recorder;
     for (auto _: state) {
         state.PauseTiming();
         OrderBook book{};
+        if constexpr (check_no_alloc_after_init) {
+            no_alloc::enter_no_alloc_zone();
+        }
         state.ResumeTiming();
         for (const ITCH::Message &msg_variant: parsed_itch_for_stock) {
             if (auto* msg = std::get_if<ITCH::AddOrderMessage>(&msg_variant)) {
@@ -86,6 +90,9 @@ static void BM_MixedStreamRealWorldData(benchmark::State &state) {
                 ++messages_processed;
                 RecordOperation(book.replaceOrder(msg->original_order_reference_number, msg->new_order_reference_number, msg->new_quantity, static_cast<Price>(msg->new_price)))
             }
+        }
+        if constexpr (check_no_alloc_after_init) {
+            no_alloc::exit_no_alloc_zone();
         }
     }
 
@@ -115,8 +122,13 @@ int main(int argc, char** argv) {
         std::println("Parsed itch file to an empty vector");
         return 2;
     }
-
+    bool callgrind = false;
     for (int i{2}; i < argc; i++) {
+        if (std::strcmp(argv[i], "--callgrind") == 0) {
+            std::println("Running with callgrind");
+            callgrind = true;
+            break;
+        }
         if (std::strcmp(argv[i], "--perf-record") == 0) {
             std::println("Running with perf");
             runPerf(true);
@@ -128,8 +140,15 @@ int main(int argc, char** argv) {
             break;
         }
     }
-
+    if (callgrind) {
+        CALLGRIND_START_INSTRUMENTATION;
+        CALLGRIND_ZERO_STATS;
+    }
     benchmark::RunSpecifiedBenchmarks();
+    if (callgrind) {
+        CALLGRIND_STOP_INSTRUMENTATION;
+    }
+
     benchmark::Shutdown();
 
     return 0;

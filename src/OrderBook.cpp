@@ -67,11 +67,9 @@ void OrderBook::cancelOrderInternal(OrderHashMap::iterator it) {
         PriceLevel* level = getPriceLevelOfLastOrder(*order);
         price_level_cache.push_back(level);
         if (side == TradeSide::Buy) {
-            using itType = std::remove_cvref_t<decltype(bids)>::iterator;
-            bids.erase(itType(&bids, level->idx));
+            bids.erase(level->price);
         } else {
-            using itType = std::remove_cvref_t<decltype(asks)>::iterator;
-            asks.erase(itType(&asks, level->idx));
+            asks.erase(level->price);
         }
     }
 }

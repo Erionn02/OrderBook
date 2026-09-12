@@ -152,16 +152,11 @@ private:
     }
 
 
-    struct UpdateIdxHook {
-        void operator()(PriceLevel* level, std::size_t idx) const noexcept {
-            level->idx = idx;
-        }
-    };
-    packed_memory_array<Price, PriceLevel*, std::greater<>, UpdateIdxHook, PMAMode::NoRebalance> bids{};
-    packed_memory_array<Price, PriceLevel*, std::less<>, UpdateIdxHook, PMAMode::NoRebalance> asks{};
+    packed_memory_array<Price, PriceLevel*, std::greater<>, NoOp, PMAMode::NoRebalance> bids{};
+    packed_memory_array<Price, PriceLevel*, std::less<>, NoOp, PMAMode::NoRebalance> asks{};
     std::vector<Order*> orders_cache{};
     std::deque<Order, aligned_allocator<Order, 64>> orders_source{};
     std::vector<PriceLevel*> price_level_cache{};
-    std::deque<PriceLevel, aligned_allocator<PriceLevel, 32>> price_level_source{};
+    std::deque<PriceLevel, aligned_allocator<PriceLevel, 64>> price_level_source{};
     OrderHashMap orders{};
 };

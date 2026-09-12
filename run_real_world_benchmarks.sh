@@ -19,6 +19,7 @@ if [ ! -f ./cache/${test_ticker}.itch ]; then
   ./cmake-build-release/apps/ExtractITCHPerTicker ./cache/12302019.NASDAQ_ITCH50 ${test_ticker} ./cache/${test_ticker}.itch
 fi
 
+sudo sysctl kernel.perf_event_paranoid=1
 echo "performance" | sudo tee /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
 sleep 1
 sudo env LD_PRELOAD=${LD_PRELOAD} MALLOC_CONF=${MALLOC_CONF} taskset -c 3 chrt -f 99 ./cmake-build-release/RealWorldDataOrderBookBenchmark ./cache/${test_ticker}.itch "${@:2}"

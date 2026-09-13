@@ -64,9 +64,11 @@ static void BM_CancelOrder(benchmark::State &state) {
     LatencyRecorder latency_recorder;
     const std::size_t n = static_cast<std::size_t>(state.range(0));
 
+    std::int64_t total_processed{0};
     for (auto _: state) {
         state.PauseTiming();
         auto [book, _, ids] = buildPopulatedBook(n);
+        total_processed += static_cast<std::int64_t>(ids.size());
         state.ResumeTiming();
 
         for (OrderId id: ids) {
@@ -77,7 +79,7 @@ static void BM_CancelOrder(benchmark::State &state) {
     if constexpr (record_latency) {
         reportLatency(state, latency_recorder);
     } else {
-        state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+        state.SetItemsProcessed(total_processed);
     }
 }
 
@@ -154,12 +156,14 @@ static void BM_ReplaceOrder(benchmark::State &state) {
     LatencyRecorder latency_recorder;
     MarketParams deep_params{.cancel_rate = 0, .modify_rate = 0};
 
+    std::int64_t total_processed{0};
     for (auto _: state) {
         state.PauseTiming();
 
         RealisticGenerator gen(42, deep_params);
         auto [book, live_orders, _] = buildPopulatedBook(n, gen);
         auto new_orders = gen.generateOrders(live_orders.size());
+        total_processed += static_cast<std::int64_t>(live_orders.size());
         state.ResumeTiming();
         for (const auto &[old_order, new_order]: std::views::zip(live_orders, new_orders)) {
             RecordOperation(benchmark::DoNotOptimize(book.replaceOrder(old_order.getId(), new_order.getId(), new_order.getQuantity(), new_order.getPrice())));
@@ -169,7 +173,7 @@ static void BM_ReplaceOrder(benchmark::State &state) {
     if constexpr (record_latency) {
         reportLatency(state, latency_recorder);
     } else {
-        state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+        state.SetItemsProcessed(total_processed);
     }
 }
 
